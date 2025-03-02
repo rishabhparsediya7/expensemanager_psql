@@ -49,7 +49,7 @@ class ExpenseService {
       const formattedDate = new Date(expenseDate).toISOString().split("T")[0]
 
       const { rows: expenses } = await dbClient.query({
-        text: `SELECT * FROM expenses WHERE user_id = $1 AND DATE(created_at) = $2;`,
+        text: `SELECT * FROM expenses WHERE user_id = $1 AND DATE(created_at at time zone 'Asia/Kolkata') = $2;`,
         values: [userId, formattedDate],
       })
       await dbClient?.end()
@@ -58,7 +58,7 @@ class ExpenseService {
       await dbClient.connect()
 
       const { rows: expenseAggregate } = await dbClient.query({
-        text: `select count(*) , sum(amount) from expenses WHERE user_id = $1 AND DATE(created_at) = $2;`,
+        text: `select count(*) , sum(amount) from expenses WHERE user_id = $1 AND DATE(created_at at time zone 'Asia/Kolkata') = $2;`,
         values: [userId, formattedDate],
       })
 

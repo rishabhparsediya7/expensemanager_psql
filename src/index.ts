@@ -24,7 +24,7 @@ app.use("/api/group", groupRouter)
 app.use("/api/expense", expenseRouter)
 
 app.get("/", async (req, res) => {
-  res.status(200).json({ message: "Welcome to the K-Server" })
+  res.status(200).json({ message: "Welcome to the Master Server" })
 })
 
 // Start server
