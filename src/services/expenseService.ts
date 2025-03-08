@@ -175,6 +175,27 @@ class ExpenseService {
       await dbClient?.end()
     }
   }
+
+  // Get Expenses by Dates
+  async getExpenseByDates(startDate: string, endDate: string) {
+    let dbClient
+    try {
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+
+      const { rows: expenses } = await dbClient.query({
+        text: `SELECT * FROM expenses WHERE created_at BETWEEN $1 AND $2 order by created_at desc`,
+        values: [startDate, endDate],
+      })
+
+      return { success: true, data: expenses }
+    } catch (error) {
+      console.log("🚀 ~ ExpenseService ~ getExpenseByDates ~ error:", error)
+      return { success: false, message: error }
+    } finally {
+      await dbClient?.end()
+    }
+  }
 }
 
 export default new ExpenseService()

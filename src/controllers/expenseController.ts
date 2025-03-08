@@ -23,7 +23,7 @@ export const addExpense = async (req: Request, res: Response) => {
   }
 }
 
-// Get Expenses for a Group
+// Get Expenses for a user
 export const getExpense = async (req: Request, res: Response) => {
   const { userId, expenseDate } = req.body
   if (!userId || !expenseDate) {
@@ -73,6 +73,17 @@ export const deleteExpense = async (req: Request, res: Response) => {
 export const getExpenseDetails = async (req: Request, res: Response) => {
   const { expenseId } = req.params
   const response = await ExpenseService.getExpenseDetails(expenseId)
+  if (response.success) {
+    res.status(200).json(response)
+  } else {
+    res.status(400).json(response)
+  }
+}
+
+// Get Expenses by Dates
+export const getExpenseByDates = async (req: Request, res: Response) => {
+  const { startDate, endDate } = req.params
+  const response = await ExpenseService.getExpenseByDates(startDate, endDate)
   if (response.success) {
     res.status(200).json(response)
   } else {
