@@ -108,13 +108,48 @@ class AuthService {
     }
   }
 
+  async sendOTP(email: string) {
+    console.log("🚀 ~ AuthService ~ sendOTP ~ email:", email)
+    let dbClient
+    try {
+      const otp = Math.floor(100000 + Math.random() * 900000).toString()
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+      const { rows } = await dbClient.query({
+        text: "update users set otp = $1 where email = $2 returning *",
+        values: [otp, email],
+      })
+      if (rows.length === 0) {
+        return { success: false, message: "User not found" }
+      }
+      const user = rows[0]
+      const otpExpiration = new Date(user.otp_created_at)
+      otpExpiration.setMinutes(
+        otpExpiration.getMinutes() +
+          parseInt(String(process.env.OTP_EXPIRATION_MINUTES))
+      )
+      return {
+        success: true,
+        email: user.email,
+        message: "OTP sent successfully",
+        otp,
+        otpExpiration,
+      }
+    } catch (error) {
+      console.log("🚀 ~ AuthServices ~ sendOTP ~ error:", error)
+      return { success: false, message: "Failed to send OTP" }
+    } finally {
+      await dbClient?.end()
+    }
+  }
+
   async verifyOTP(email: string, otp: string) {
     let dbClient
     try {
       dbClient = new pg.Client(config)
       await dbClient.connect()
       const users = await dbClient.query({
-        text: "SELECT * FROM users WHERE email = $1",
+        text: "SELECT otp, otp_created_at, otp_expires_in FROM users WHERE email = $1",
         values: [email],
       })
       await dbClient.end()
@@ -124,29 +159,17 @@ class AuthService {
       }
 
       const user = users.rows[0]
-      const otpExpiration = new Date(user.otp_created_at)
-      otpExpiration.setMinutes(
-        otpExpiration.getMinutes() +
-          parseInt(String(process.env.OTP_EXPIRATION_MINUTES))
-      )
 
       if (user.otp !== otp) {
         return { success: false, message: "Invalid OTP" }
       }
 
-      if (new Date() > otpExpiration) {
+      if (new Date() > user.otp_expires_in) {
         return { success: false, message: "OTP expired" }
       }
 
       const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
         expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
-      })
-
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-      await dbClient.query({
-        text: "UPDATE users SET isverified = TRUE, otp = NULL, otpcreatedat = NULL, otpvaliduntil = NULL, lastlogin = CURRENT_TIMESTAMP WHERE email = $1",
-        values: [email],
       })
 
       return { success: true, message: "Email verified successfully", token }

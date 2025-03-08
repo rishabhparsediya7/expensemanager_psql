@@ -49,3 +49,9 @@ export const verifyOTP = async (req: Request, res: Response) => {
     res.status(400).json(response)
   }
 }
+
+export const sendOTP = async (req: Request, res: Response) => {
+  const { email } = req.body
+  const response = await AuthService.sendOTP(email)
+  res.status(200).json(response)
+}
