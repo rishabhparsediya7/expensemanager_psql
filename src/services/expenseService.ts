@@ -177,20 +177,64 @@ class ExpenseService {
   }
 
   // Get Expenses by Dates
-  async getExpenseByDates(startDate: string, endDate: string) {
+  async getExpenseByDates(userId: string, startDate: string, endDate: string) {
     let dbClient
     try {
       dbClient = new pg.Client(config)
       await dbClient.connect()
 
       const { rows: expenses } = await dbClient.query({
-        text: `SELECT * FROM expenses WHERE created_at BETWEEN $1 AND $2 order by created_at desc`,
+        text: `WITH date_series AS (
+                    SELECT generate_series(
+                        $1::DATE, 
+                        $2::DATE, 
+                        '1 day'::INTERVAL
+                    )::DATE AS expense_date
+                )
+                SELECT 
+                    ds.expense_date::TEXT as expense_date,  -- Convert DATE to TEXT
+                    COALESCE(SUM(e.amount), 0) AS total_amount
+                FROM date_series ds
+                LEFT JOIN expenses e 
+                    ON ds.expense_date = DATE(e.created_at)
+                GROUP BY ds.expense_date
+                ORDER BY ds.expense_date;
+                `,
         values: [startDate, endDate],
       })
 
       return { success: true, data: expenses }
     } catch (error) {
       console.log("🚀 ~ ExpenseService ~ getExpenseByDates ~ error:", error)
+      return { success: false, message: error }
+    } finally {
+      await dbClient?.end()
+    }
+  }
+  async getExpensByCategory(
+    userId: string,
+    startDate?: string,
+    endDate?: string
+  ) {
+    let dbClient
+    try {
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+      const { rows: expenses } = await dbClient.query({
+        text: `SELECT 
+                  cat.name, 
+                  COALESCE(SUM(e.amount), 0) AS amount 
+              FROM category cat
+              LEFT JOIN expenses e 
+                  ON cat.id = e.category_id 
+                  AND e.user_id = $1
+              GROUP BY cat.id, cat.name
+              ORDER BY cat.id ASC;`,
+        values: [userId],
+      })
+      return { success: true, data: expenses }
+    } catch (error) {
+      console.log("🚀 ~ ExpenseService ~ getExpensByCategory ~ error:", error)
       return { success: false, message: error }
     } finally {
       await dbClient?.end()

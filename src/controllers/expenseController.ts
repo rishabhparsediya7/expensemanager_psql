@@ -82,9 +82,23 @@ export const getExpenseDetails = async (req: Request, res: Response) => {
 
 // Get Expenses by Dates
 export const getExpenseByDates = async (req: Request, res: Response) => {
-  const { startDate, endDate } = req.params
-  const response = await ExpenseService.getExpenseByDates(startDate, endDate)
+  const { userId, startDate, endDate } = req.body
+  const response = await ExpenseService.getExpenseByDates(
+    userId,
+    startDate,
+    endDate
+  )
   if (response.success) {
+    res.status(200).json(response)
+  } else {
+    res.status(400).json(response)
+  }
+}
+
+export const getExpenseByCategory = async (req: Request, res: Response) => {
+  const { userId, startDate, endDate } = req.body
+  const response = await ExpenseService.getExpensByCategory(userId)
+  if (response?.success) {
     res.status(200).json(response)
   } else {
     res.status(400).json(response)

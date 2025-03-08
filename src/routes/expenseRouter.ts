@@ -6,6 +6,7 @@ import {
   getExpense,
   updateExpense,
   getExpenseByDates,
+  getExpenseByCategory,
 } from "../controllers/expenseController"
 
 const expenseRouter = express.Router()
@@ -20,6 +21,8 @@ expenseRouter.post("/delete/:expenseId", deleteExpense)
 
 expenseRouter.post("/details/:expenseId", getExpenseDetails)
 
-expenseRouter.get("/dates/:startDate/:endDate", getExpenseByDates)
+expenseRouter.post("/getExpenseByDates", getExpenseByDates)
+
+expenseRouter.post("/getExpenseByCategory", getExpenseByCategory)
 
 export default expenseRouter

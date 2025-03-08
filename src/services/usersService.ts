@@ -13,17 +13,17 @@ class UsersService {
         })
         .catch((err) => console.log(err))
       const result = await dbClient.query({
-        text: `SELECT * FROM users WHERE id = $1`,
+        text: `select id, first_name || ' ' || last_name as name, email, phone, profile_picture, created_at, updated_at from users where id = $1`,
         values: [userId],
       })
 
       const user: any = result.rows?.[0]
-      const { first_name, last_name, email, id, profile_picture } = user
+      const { name, email, id, profile_picture } = user
       return {
         success: true,
         message: "User fetched successfully",
         userId: id,
-        user: { first_name, last_name, email, id, profile_picture },
+        user: { name, email, id, profile_picture },
       }
     } catch (error) {
       console.log("🚀 ~ UsersService ~ getUserById ~ error:", error)
