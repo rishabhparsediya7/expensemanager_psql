@@ -2,14 +2,15 @@ import pg from "pg"
 import config from "../database"
 import jwt from "jsonwebtoken"
 import bcrypt from "bcrypt"
+import { sendOTPEmail } from "../utils/sendMail"
 
 const JWT_SECRET = process.env.JWT_SECRET ?? ""
 const JWT_EXPIRATION_MINUTES = process.env.JWT_EXPIRATION_MINUTES
 class AuthService {
   async signup(
     email: string,
-    first_name: string,
-    last_name: string,
+    firstName: string,
+    lastName: string,
     password: string
   ) {
     const saltRounds = 10
@@ -23,9 +24,10 @@ class AuthService {
           console.log("database connected sucesfully!")
         })
         .catch((err) => console.log(err))
+      const otp = await sendOTPEmail({ email })
       const result = await dbClient.query({
-        text: `INSERT INTO users (email, first_name, last_name, password_hash) VALUES ($1, $2, $3, $4) RETURNING id`,
-        values: [email, first_name, last_name, passwordHash],
+        text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", otp) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        values: [email, firstName, lastName, passwordHash, otp],
         rowMode: "array",
       })
 
@@ -73,9 +75,10 @@ class AuthService {
       }
 
       const user = result.rows[0]
+      console.log("🚀 ~ AuthService ~ login ~ user:", user)
 
       // Compare the provided password with the stored password hash
-      const isPasswordValid = await bcrypt.compare(password, user.password_hash)
+      const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
 
       if (!isPasswordValid) {
         return {
@@ -93,7 +96,7 @@ class AuthService {
       return {
         success: true,
         message: "Login successful",
-        name: user.first_name + " " + user.last_name,
+        name: user.firstName + " " + user.lastName,
         token,
         userId: user.id,
       }
@@ -123,7 +126,7 @@ class AuthService {
         return { success: false, message: "User not found" }
       }
       const user = rows[0]
-      const otpExpiration = new Date(user.otp_created_at)
+      const otpExpiration = new Date(user.otpCreatedAt)
       otpExpiration.setMinutes(
         otpExpiration.getMinutes() +
           parseInt(String(process.env.OTP_EXPIRATION_MINUTES))
@@ -149,7 +152,7 @@ class AuthService {
       dbClient = new pg.Client(config)
       await dbClient.connect()
       const users = await dbClient.query({
-        text: "SELECT otp, otp_created_at, otp_expires_in FROM users WHERE email = $1",
+        text: `SELECT otp, "otpCreatedAt", "otpExpiration" FROM users WHERE email = $1`,
         values: [email],
       })
       await dbClient.end()
@@ -164,11 +167,19 @@ class AuthService {
         return { success: false, message: "Invalid OTP" }
       }
 
-      if (new Date() > user.otp_expires_in) {
+      if (new Date() > user.otpExpiration) {
         return { success: false, message: "OTP expired" }
       }
 
-      const token = jwt.sign({ userId: user._id }, JWT_SECRET, {
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+      await dbClient.query({
+        text: `update users set "isEmailVerified" = true where email = $1`,
+        values: [email],
+      })
+      await dbClient.end()
+
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
         expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
       })
 

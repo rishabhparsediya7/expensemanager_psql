@@ -2,8 +2,9 @@ import { Request, Response } from "express"
 import AuthService from "../services/authService"
 
 export const signup = async (req: Request, res: Response) => {
-  const { email, first_name, last_name, password } = req.body
-  if (!email || !first_name || !last_name || !password) {
+  const { email, firstName, lastName, password } = req.body
+  if (!email || !firstName || !lastName || !password) {
+    console.log(email, firstName, lastName, password)
     return res
       .status(400)
       .json({ error: "Inputs are required - Email / First Name / Last Name" })
@@ -11,8 +12,8 @@ export const signup = async (req: Request, res: Response) => {
 
   const response = await AuthService.signup(
     email,
-    first_name,
-    last_name,
+    firstName,
+    lastName,
     password
   )
   if (response.success) {
@@ -52,6 +53,13 @@ export const verifyOTP = async (req: Request, res: Response) => {
 
 export const sendOTP = async (req: Request, res: Response) => {
   const { email } = req.body
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" })
+  }
   const response = await AuthService.sendOTP(email)
-  res.status(200).json(response)
+  if (response.success) {
+    res.status(200).json(response)
+  } else {
+    res.status(400).json(response)
+  }
 }
