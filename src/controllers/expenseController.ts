@@ -4,6 +4,8 @@ import ExpenseService from "../services/expenseService"
 // Add an Expense
 export const addExpense = async (req: Request, res: Response) => {
   const { amount, description, category } = req.body
+  let expenseDate = req.body?.expenseDate
+  expenseDate = new Date(expenseDate).toLocaleDateString()
   const userId = req?.userId
 
   if (!userId) {
@@ -21,6 +23,7 @@ export const addExpense = async (req: Request, res: Response) => {
     amount,
     category,
     description,
+    expenseDate,
   })
 
   if (response.success) {
@@ -32,16 +35,38 @@ export const addExpense = async (req: Request, res: Response) => {
 
 // Get Expenses for a user
 export const getExpense = async (req: Request, res: Response) => {
-  const { userId, expenseDate } = req.body
-  if (!userId || !expenseDate) {
-    res.status(400).json({ success: false, message: "Missing required fields" })
-    return
+  const userId = req?.userId
+
+  if (!userId) {
+    return res.status(400).json({ success: false, message: "Invalid Request" })
   }
-  const response = await ExpenseService.getExpense({ userId, expenseDate })
+
+  const {
+    filter,
+    startDate,
+    endDate,
+    page = 1,
+    limit = 10,
+    sortBy = "expenseDate",
+    sortOrder = "desc",
+  } = req.query
+
+  const filters = {
+    filter: filter as string,
+    startDate: startDate as string,
+    endDate: endDate as string,
+    page: parseInt(page as string, 10),
+    limit: parseInt(limit as string, 10),
+    sortBy: sortBy as string,
+    sortOrder: sortOrder as string,
+  }
+
+  const response = await ExpenseService.getExpense({ userId, ...filters })
+
   if (response.success) {
-    res.status(200).json(response)
+    return res.status(200).json(response)
   } else {
-    res.status(400).json(response)
+    return res.status(400).json(response)
   }
 }
 

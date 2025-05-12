@@ -1,16 +1,26 @@
 import pg from "pg"
 import config from "../database"
+import dayjs from "dayjs"
+import isoWeek from "dayjs/plugin/isoWeek"
 
+dayjs.extend(isoWeek)
 interface AddExpense {
   userId: string
   amount: number
   description: string
   category: number
+  expenseDate?: string
 }
 
 class ExpenseService {
   // Add Expense
-  async addExpense({ userId, amount, category, description }: AddExpense) {
+  async addExpense({
+    userId,
+    amount,
+    category,
+    description,
+    expenseDate,
+  }: AddExpense) {
     let dbClient
     try {
       dbClient = new pg.Client(config)
@@ -18,10 +28,10 @@ class ExpenseService {
 
       // Insert expense
       const { rows: expense } = await dbClient.query({
-        text: `INSERT INTO expenses ("userId", "amount", "categoryId", "description") 
-               VALUES ($1, $2, $3, $4) 
+        text: `INSERT INTO expenses ("userId", "amount", "categoryId", "description", "expenseDate") 
+               VALUES ($1, $2, $3, $4, $5) 
                RETURNING *`,
-        values: [userId, amount, category, description],
+        values: [userId, amount, category, description, expenseDate],
       })
 
       return { success: true, data: expense[0] }
@@ -33,46 +43,124 @@ class ExpenseService {
     }
   }
 
-  // Get Expenses
+  // Get Expenses with filering
+  // pagination, sorting and custom date range
   async getExpense({
     userId,
-    expenseDate,
+    filter,
+    startDate,
+    endDate,
+    page,
+    limit,
+    sortBy,
+    sortOrder,
   }: {
     userId: string
-    expenseDate: string
+    filter?: string
+    startDate?: string
+    endDate?: string
+    page: number
+    limit: number
+    sortBy: string
+    sortOrder: string
   }) {
+    const allowedSortBy = ["expenseDate", "amount", "createdAt"]
+    const allowedSortOrder = ["asc", "desc"]
+
+    // Ensure safe sort column and direction
+    const sortColumn = allowedSortBy.includes(sortBy)
+      ? `"${sortBy}"`
+      : '"expenseDate"'
+    const sortDirection = allowedSortOrder.includes(sortOrder.toLowerCase())
+      ? sortOrder.toUpperCase()
+      : "DESC"
+
     let dbClient
     try {
       dbClient = new pg.Client(config)
       await dbClient.connect()
 
-      const formattedDate = new Date(expenseDate).toISOString().split("T")[0]
+      let fromDate: string
+      let toDate: string
 
-      const { rows: expenses } = await dbClient.query({
-        text: `SELECT * FROM expenses WHERE user_id = $1 AND DATE(created_at at time zone 'Asia/Kolkata') = $2;`,
-        values: [userId, formattedDate],
-      })
-      await dbClient?.end()
+      const now = dayjs()
 
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
+      // Handle different filter cases
+      switch (filter) {
+        case "week":
+          fromDate = now.startOf("isoWeek").toISOString() // Get start of this week
+          toDate = now.endOf("isoWeek").toISOString() // Get end of this week
+          break
+        case "month":
+          fromDate = now.startOf("month").toISOString() // Start of the month
+          toDate = now.endOf("month").toISOString() // End of the month
+          break
+        case "year":
+          fromDate = now.startOf("year").toISOString() // Start of the year
+          toDate = now.endOf("year").toISOString() // End of the year
+          break
+        case "custom":
+          if (!startDate || !endDate) {
+            throw new Error("Custom filter requires startDate and endDate")
+          }
+          // Format custom date range with time (inclusive range)
+          fromDate = dayjs(startDate).startOf("day").toISOString() // Start of custom date range
+          toDate = dayjs(endDate).endOf("day").toISOString() // End of custom date range
+          break
+        default:
+          // Default: get all expenses up until today
+          fromDate = "1970-01-01T00:00:00.000Z" // From a distant past, to include all data
+          toDate = now.endOf("day").toISOString() // Up until today
+          break
+      }
 
-      const { rows: expenseAggregate } = await dbClient.query({
-        text: `select count(*) , sum(amount) from expenses WHERE user_id = $1 AND DATE(created_at at time zone 'Asia/Kolkata') = $2;`,
-        values: [userId, formattedDate],
-      })
+      const offset = (page - 1) * limit
 
-      console.log("🚀 ~ ExpenseService ~ getExpense ~ expenses:", expenses)
+      // Query to fetch the filtered expenses
+      const expensesQuery = {
+        text: `
+          SELECT e.*, c.name as category
+          FROM expenses e
+          LEFT JOIN category c ON e."categoryId" = c.id
+          WHERE e."userId" = $1 AND e."expenseDate" BETWEEN $2 AND $3
+          ORDER BY ${sortColumn} ${sortDirection}
+          LIMIT $4 OFFSET $5
+        `,
+        values: [userId, fromDate, toDate, limit, offset],
+      }
+
+      // Query to get the aggregate results
+      const aggregateQuery = {
+        text: `
+          SELECT COUNT(*) AS count, SUM(amount) AS sum
+          FROM expenses e
+          WHERE e."userId" = $1 AND e."expenseDate" BETWEEN $2 AND $3
+        `,
+        values: [userId, fromDate, toDate],
+      }
+
+      // Run both queries concurrently
+      const [
+        { rows: expenses },
+        {
+          rows: [agg],
+        },
+      ] = await Promise.all([
+        dbClient.query(expensesQuery),
+        dbClient.query(aggregateQuery),
+      ])
 
       return {
         success: true,
         data: expenses,
-        totalCount: expenseAggregate?.[0]?.count || 0,
-        totalSum: expenseAggregate?.[0]?.sum || 0,
+        totalCount: parseInt(agg.count || "0", 10),
+        totalSum: parseFloat(agg.sum || "0"),
+        page,
+        limit,
       }
     } catch (error) {
-      console.log("🚀 ~ ExpenseService ~ getExpenses ~ error:", error)
-      return { success: false, message: error }
+      console.error("Error fetching expenses:", error)
+      return { success: false, message: "Internal server error" }
     } finally {
       await dbClient?.end()
     }
@@ -211,6 +299,8 @@ class ExpenseService {
       await dbClient?.end()
     }
   }
+
+  // Get Expenses by Category
   async getExpensByCategory(
     userId: string,
     startDate?: string,

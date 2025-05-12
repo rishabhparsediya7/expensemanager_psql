@@ -16,7 +16,7 @@ expenseRouter.use(authenticateJWT)
 
 expenseRouter.post("/add", addExpense)
 
-expenseRouter.get("/expenses", getExpense)
+expenseRouter.get("/", getExpense)
 
 expenseRouter.post("/update", updateExpense)
 
