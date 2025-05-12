@@ -18,7 +18,7 @@ class ExpenseService {
 
       // Insert expense
       const { rows: expense } = await dbClient.query({
-        text: `INSERT INTO expenses ("user_id", "amount", "category_id", "description") 
+        text: `INSERT INTO expenses ("userId", "amount", "categoryId", "description") 
                VALUES ($1, $2, $3, $4) 
                RETURNING *`,
         values: [userId, amount, category, description],
@@ -189,16 +189,16 @@ class ExpenseService {
                         $1::DATE, 
                         $2::DATE, 
                         '1 day'::INTERVAL
-                    )::DATE AS expense_date
+                    )::DATE AS "expenseDate"
                 )
                 SELECT 
-                    ds.expense_date::TEXT as expense_date,  -- Convert DATE to TEXT
-                    COALESCE(SUM(e.amount), 0) AS total_amount
+                    ds."expenseDate"::TEXT as "expenseDate",  -- Convert DATE to TEXT
+                    COALESCE(SUM(e."amount"), 0) AS totalAmount
                 FROM date_series ds
                 LEFT JOIN expenses e 
-                    ON ds.expense_date = DATE(e.created_at)
-                GROUP BY ds.expense_date
-                ORDER BY ds.expense_date;
+                    ON ds."expenseDate" = DATE(e."createdAt")
+                GROUP BY ds."expenseDate"
+                ORDER BY ds."expenseDate";
                 `,
         values: [startDate, endDate],
       })

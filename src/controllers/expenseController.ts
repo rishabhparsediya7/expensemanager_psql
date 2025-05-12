@@ -3,18 +3,25 @@ import ExpenseService from "../services/expenseService"
 
 // Add an Expense
 export const addExpense = async (req: Request, res: Response) => {
-  const { userId, amount, description, category } = req.body
+  const { amount, description, category } = req.body
+  const userId = req?.userId
+
+  if (!userId) {
+    res.status(400).json({ success: false, message: "Invalid Request" })
+    return
+  }
+
+  if (!amount || !description || !category) {
+    res.status(400).json({ success: false, message: "Missing required fields" })
+    return
+  }
+
   const response = await ExpenseService.addExpense({
     userId,
     amount,
     category,
     description,
   })
-
-  if (!userId || !amount || !description || !category) {
-    res.status(400).json({ success: false, message: "Missing required fields" })
-    return
-  }
 
   if (response.success) {
     res.status(200).json(response)

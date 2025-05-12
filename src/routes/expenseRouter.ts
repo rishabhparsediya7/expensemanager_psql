@@ -8,12 +8,15 @@ import {
   getExpenseByDates,
   getExpenseByCategory,
 } from "../controllers/expenseController"
+import authenticateJWT from "../middlewares/authenticate"
 
 const expenseRouter = express.Router()
 
+expenseRouter.use(authenticateJWT)
+
 expenseRouter.post("/add", addExpense)
 
-expenseRouter.post("/date", getExpense)
+expenseRouter.get("/expenses", getExpense)
 
 expenseRouter.post("/update", updateExpense)
 
@@ -21,6 +24,8 @@ expenseRouter.post("/delete/:expenseId", deleteExpense)
 
 expenseRouter.post("/details/:expenseId", getExpenseDetails)
 
+// will move the below routers to
+// the charts expense router
 expenseRouter.post("/getExpenseByDates", getExpenseByDates)
 
 expenseRouter.post("/getExpenseByCategory", getExpenseByCategory)
