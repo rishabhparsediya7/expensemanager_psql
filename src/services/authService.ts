@@ -18,12 +18,22 @@ class AuthService {
     let dbClient
     try {
       dbClient = new pg.Client(config)
-      dbClient
-        .connect()
-        .then(() => {
-          console.log("database connected sucesfully!")
-        })
-        .catch((err) => console.log(err))
+      await dbClient.connect()
+
+      const isUserExist = await dbClient.query({
+        text: "SELECT * FROM users WHERE email = $1",
+        values: [email],
+      })
+      if (isUserExist.rows.length > 0) {
+        return {
+          success: false,
+          message: "User already exists",
+        }
+      }
+      await dbClient.end()
+
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
       const otp = await sendOTPEmail({ email })
       const result = await dbClient.query({
         text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", otp) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
