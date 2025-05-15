@@ -3,9 +3,7 @@ import ExpenseService from "../services/expenseService"
 
 // Add an Expense
 export const addExpense = async (req: Request, res: Response) => {
-  const { amount, description, category } = req.body
-  let expenseDate = req.body?.expenseDate
-  expenseDate = new Date(expenseDate).toLocaleDateString()
+  const { amount, description, category, expenseDate, paymentMethod } = req.body
   const userId = req?.userId
 
   if (!userId) {
@@ -24,6 +22,7 @@ export const addExpense = async (req: Request, res: Response) => {
     category,
     description,
     expenseDate,
+    paymentMethodId: paymentMethod,
   })
 
   if (response.success) {

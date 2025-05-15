@@ -10,6 +10,7 @@ interface AddExpense {
   description: string
   category: number
   expenseDate?: string
+  paymentMethodId?: number
 }
 
 class ExpenseService {
@@ -20,18 +21,28 @@ class ExpenseService {
     category,
     description,
     expenseDate,
+    paymentMethodId,
   }: AddExpense) {
     let dbClient
     try {
       dbClient = new pg.Client(config)
       await dbClient.connect()
 
+      const values = [
+        userId,
+        amount,
+        category,
+        description,
+        expenseDate,
+        paymentMethodId,
+      ]
+
       // Insert expense
       const { rows: expense } = await dbClient.query({
-        text: `INSERT INTO expenses ("userId", "amount", "categoryId", "description", "expenseDate") 
-               VALUES ($1, $2, $3, $4, $5) 
+        text: `INSERT INTO expenses ("userId", "amount", "categoryId", "description", "expenseDate", "paymentMethodId") 
+               VALUES ($1, $2, $3, $4, $5, $6) 
                RETURNING *`,
-        values: [userId, amount, category, description, expenseDate],
+        values,
       })
 
       return { success: true, data: expense[0] }
@@ -119,11 +130,12 @@ class ExpenseService {
       // Query to fetch the filtered expenses
       const expensesQuery = {
         text: `
-          SELECT e.*, c.name as category
+          SELECT e.*, c.name as category, pm.name as "paymentMethod"
           FROM expenses e
           LEFT JOIN category c ON e."categoryId" = c.id
+          LEFT JOIN "paymentMethod" pm ON e."paymentMethodId" = pm.id
           WHERE e."userId" = $1 AND e."expenseDate" BETWEEN $2 AND $3
-          ORDER BY ${sortColumn} ${sortDirection}
+          ORDER BY ${sortColumn} ${sortDirection}, e."createdAt" ${sortDirection}
           LIMIT $4 OFFSET $5
         `,
         values: [userId, fromDate, toDate, limit, offset],
