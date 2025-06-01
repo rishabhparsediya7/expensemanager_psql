@@ -85,7 +85,6 @@ class AuthService {
       }
 
       const user = result.rows[0]
-      console.log("🚀 ~ AuthService ~ login ~ user:", user)
 
       // Compare the provided password with the stored password hash
       const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
