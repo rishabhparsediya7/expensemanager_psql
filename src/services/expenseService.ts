@@ -129,6 +129,9 @@ class ExpenseService {
           break
       }
 
+      console.log("fromDate", fromDate)
+      console.log("toDate", toDate)
+
       const offset = (page - 1) * limit
 
       // Query to fetch the filtered expenses
@@ -204,10 +207,10 @@ class ExpenseService {
       const [
         { rows: expenses },
         {
-          rows: [agg],
+          rows: [aggMonth],
         },
         {
-          rows: [aggMonth],
+          rows: [agg],
         },
         {
           rows: [aggPreviousMonth],
