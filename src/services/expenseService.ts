@@ -151,15 +151,27 @@ class ExpenseService {
         values: [userId, fromDate, toDate],
       }
 
+      const aggregateMonth = {
+        text: `
+          SELECT SUM(amount) AS sum FROM expenses e
+          WHERE e."userId" = $1 AND e."expenseDate" BETWEEN $2 AND $3
+        `,
+        values: [userId, fromDate, toDate],
+      }
+
       // Run both queries concurrently
       const [
         { rows: expenses },
         {
           rows: [agg],
         },
+        {
+          rows: [aggMonth],
+        },
       ] = await Promise.all([
         dbClient.query(expensesQuery),
         dbClient.query(aggregateQuery),
+        dbClient.query(aggregateMonth),
       ])
 
       return {
@@ -167,6 +179,7 @@ class ExpenseService {
         data: expenses,
         totalCount: parseInt(agg.count || "0", 10),
         totalSum: parseFloat(agg.sum || "0"),
+        totalMonthSum: parseFloat(aggMonth.sum || "0"),
         page,
         limit,
       }
@@ -338,6 +351,45 @@ class ExpenseService {
     } catch (error) {
       console.log("🚀 ~ ExpenseService ~ getExpensByCategory ~ error:", error)
       return { success: false, message: error }
+    } finally {
+      await dbClient?.end()
+    }
+  }
+
+  async addBudget({
+    userId,
+    budget,
+    totalIncome,
+  }: {
+    userId: string
+    budget?: number
+    totalIncome?: number
+  }) {
+    let dbClient
+    try {
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+
+      await dbClient.query({
+        text: `INSERT INTO "userFinancialSummary" ("userId", "budget", "totalIncome") 
+               VALUES ($1, $2, $3) 
+               ON CONFLICT ("userId") 
+               DO UPDATE SET 
+                 "budget" = COALESCE($2, "userFinancialSummary"."budget"),
+                 "totalIncome" = COALESCE($3, "userFinancialSummary"."totalIncome")`,
+        values: [userId, budget ?? null, totalIncome ?? null],
+      })
+
+      return {
+        success: true,
+        message: `${budget ? "Budget" : "Total Income"} updated successfully.`,
+      }
+    } catch (error) {
+      console.error("Error in financeService:", error)
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "An error occurred",
+      }
     } finally {
       await dbClient?.end()
     }
