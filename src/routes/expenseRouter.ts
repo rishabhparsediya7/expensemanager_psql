@@ -7,6 +7,7 @@ import {
   updateExpense,
   getExpenseByDates,
   getExpenseByCategory,
+  addBudget,
 } from "../controllers/expenseController"
 import authenticateJWT from "../middlewares/authenticate"
 
@@ -29,5 +30,8 @@ expenseRouter.post("/details/:expenseId", getExpenseDetails)
 expenseRouter.post("/getExpenseByDates", getExpenseByDates)
 
 expenseRouter.post("/getExpenseByCategory", getExpenseByCategory)
+
+// will move the below routers to the finance router
+expenseRouter.post("/finance", addBudget)
 
 export default expenseRouter
