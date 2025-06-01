@@ -117,17 +117,12 @@ export const getExpenseDetails = async (req: Request, res: Response) => {
 }
 
 // Get Expenses by Dates
-export const getExpenseByDates = async (req: Request, res: Response) => {
-  const { userId, startDate, endDate } = req.body
-  const response = await ExpenseService.getExpenseByDates(
-    userId,
-    startDate,
-    endDate
-  )
-  if (response.success) {
-    res.status(200).json(response)
-  } else {
-    res.status(400).json(response)
+export const getWeekChart = async (req: Request, res: Response) => {
+  try {
+    const response = await ExpenseService.getCurrentWeekChart()
+    res.status(response.success ? 200 : 400).json(response)
+  } catch (error) {
+    res.status(500).json({ success: false, message: error })
   }
 }
 
@@ -141,6 +136,7 @@ export const getExpenseByCategory = async (req: Request, res: Response) => {
   }
 }
 
+// add budget and income
 export const addBudget = async (req: Request, res: Response) => {
   const { type, amount } = req.body
   const userId = req?.userId

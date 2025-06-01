@@ -5,9 +5,9 @@ import {
   getExpenseDetails,
   getExpense,
   updateExpense,
-  getExpenseByDates,
   getExpenseByCategory,
   addBudget,
+  getWeekChart,
 } from "../controllers/expenseController"
 import authenticateJWT from "../middlewares/authenticate"
 
@@ -27,7 +27,7 @@ expenseRouter.post("/details/:expenseId", getExpenseDetails)
 
 // will move the below routers to
 // the charts expense router
-expenseRouter.post("/getExpenseByDates", getExpenseByDates)
+expenseRouter.get("/getWeekChart", getWeekChart)
 
 expenseRouter.post("/getExpenseByCategory", getExpenseByCategory)
 

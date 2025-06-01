@@ -341,35 +341,40 @@ class ExpenseService {
   }
 
   // Get Expenses by Dates
-  async getExpenseByDates(userId: string, startDate: string, endDate: string) {
+  async getCurrentWeekChart() {
     let dbClient
     try {
       dbClient = new pg.Client(config)
       await dbClient.connect()
 
+      // 🗓️ Automatically get current week's Monday to Sunday
+      const startDate = dayjs().startOf("isoWeek").format("YYYY-MM-DD")
+      const endDate = dayjs().endOf("isoWeek").format("YYYY-MM-DD")
+
       const { rows: expenses } = await dbClient.query({
-        text: `WITH date_series AS (
-                    SELECT generate_series(
-                        $1::DATE, 
-                        $2::DATE, 
-                        '1 day'::INTERVAL
-                    )::DATE AS "expenseDate"
-                )
-                SELECT 
-                    ds."expenseDate"::TEXT as "expenseDate",  -- Convert DATE to TEXT
-                    COALESCE(SUM(e."amount"), 0) AS totalAmount
-                FROM date_series ds
-                LEFT JOIN expenses e 
-                    ON ds."expenseDate" = DATE(e."createdAt")
-                GROUP BY ds."expenseDate"
-                ORDER BY ds."expenseDate";
-                `,
+        text: `
+          WITH date_series AS (
+            SELECT generate_series(
+              $1::DATE,
+              $2::DATE,
+              '1 day'::INTERVAL
+            )::DATE AS "expenseDate"
+          )
+          SELECT 
+            ds."expenseDate"::TEXT as "expenseDate",
+            COALESCE(SUM(e."amount"), 0) AS totalAmount
+          FROM date_series ds
+          LEFT JOIN expenses e 
+            ON ds."expenseDate" = DATE(e."expenseDate")
+          GROUP BY ds."expenseDate"
+          ORDER BY ds."expenseDate";
+        `,
         values: [startDate, endDate],
       })
 
       return { success: true, data: expenses }
     } catch (error) {
-      console.log("🚀 ~ ExpenseService ~ getExpenseByDates ~ error:", error)
+      console.log("🚀 ~ getWeekChart ~ error:", error)
       return { success: false, message: error }
     } finally {
       await dbClient?.end()
