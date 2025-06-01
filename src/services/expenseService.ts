@@ -341,7 +341,7 @@ class ExpenseService {
   }
 
   // Get Expenses by Dates
-  async getCurrentWeekChart() {
+  async getCurrentWeekChart(userId: string) {
     let dbClient
     try {
       dbClient = new pg.Client(config)
@@ -365,11 +365,12 @@ class ExpenseService {
             COALESCE(SUM(e."amount"), 0) AS totalAmount
           FROM date_series ds
           LEFT JOIN expenses e 
-            ON ds."expenseDate" = DATE(e."expenseDate")
+            ON ds."expenseDate" = DATE(e."expenseDate") 
+            AND e."userId" = $3
           GROUP BY ds."expenseDate"
           ORDER BY ds."expenseDate";
         `,
-        values: [startDate, endDate],
+        values: [startDate, endDate, userId],
       })
 
       return { success: true, data: expenses }
@@ -382,30 +383,36 @@ class ExpenseService {
   }
 
   // Get Expenses by Category
-  async getExpensByCategory(
-    userId: string,
-    startDate?: string,
-    endDate?: string
-  ) {
+  async getExpensByCategory(userId: string) {
     let dbClient
     try {
       dbClient = new pg.Client(config)
       await dbClient.connect()
       const { rows: expenses } = await dbClient.query({
-        text: `SELECT 
-                  cat.name, 
-                  COALESCE(SUM(e.amount), 0) AS amount 
-              FROM category cat
-              LEFT JOIN expenses e 
-                  ON cat.id = e.category_id 
-                  AND e.user_id = $1
-              GROUP BY cat.id, cat.name
-              ORDER BY cat.id ASC;`,
+        text: `WITH total AS (
+                  SELECT COALESCE(SUM("amount"), 0) AS total_amount
+                  FROM "expenses"
+                  WHERE "userId" = $1
+                )
+                SELECT 
+                    cat."name",
+                    COALESCE(SUM(e."amount"), 0) AS amount,
+                    CASE 
+                        WHEN t.total_amount = 0 THEN 0
+                        ELSE ROUND(COALESCE(SUM(e."amount"), 0) * 100.0 / t.total_amount, 2)
+                    END AS percentage
+                FROM "category" cat
+                LEFT JOIN "expenses" e 
+                    ON cat."id" = e."categoryId" 
+                    AND e."userId" = $1
+                CROSS JOIN total t
+                GROUP BY cat."id", cat."name", t.total_amount
+                ORDER BY cat."id" ASC;
+        `,
         values: [userId],
       })
       return { success: true, data: expenses }
     } catch (error) {
-      console.log("🚀 ~ ExpenseService ~ getExpensByCategory ~ error:", error)
       return { success: false, message: error }
     } finally {
       await dbClient?.end()

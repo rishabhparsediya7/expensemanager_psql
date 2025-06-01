@@ -25,13 +25,15 @@ expenseRouter.post("/delete/:expenseId", deleteExpense)
 
 expenseRouter.post("/details/:expenseId", getExpenseDetails)
 
-// will move the below routers to
-// the charts expense router
+// get current week chart data
 expenseRouter.get("/getWeekChart", getWeekChart)
 
-expenseRouter.post("/getExpenseByCategory", getExpenseByCategory)
+// get expense by category
+expenseRouter.get("/getExpenseByCategory", getExpenseByCategory)
 
-// will move the below routers to the finance router
+// finance router
+// add budget
+// add income
 expenseRouter.post("/finance", addBudget)
 
 export default expenseRouter

@@ -118,8 +118,15 @@ export const getExpenseDetails = async (req: Request, res: Response) => {
 
 // Get Expenses by Dates
 export const getWeekChart = async (req: Request, res: Response) => {
+  const userId = req?.userId
+
+  if (!userId) {
+    res.status(400).json({ success: false, message: "Invalid Request" })
+    return
+  }
+
   try {
-    const response = await ExpenseService.getCurrentWeekChart()
+    const response = await ExpenseService.getCurrentWeekChart(userId)
     res.status(response.success ? 200 : 400).json(response)
   } catch (error) {
     res.status(500).json({ success: false, message: error })
@@ -127,12 +134,22 @@ export const getWeekChart = async (req: Request, res: Response) => {
 }
 
 export const getExpenseByCategory = async (req: Request, res: Response) => {
-  const { userId, startDate, endDate } = req.body
-  const response = await ExpenseService.getExpensByCategory(userId)
-  if (response?.success) {
-    res.status(200).json(response)
-  } else {
-    res.status(400).json(response)
+  const userId = req?.userId
+
+  if (!userId) {
+    res.status(400).json({ success: false, message: "Invalid Request" })
+    return
+  }
+
+  try {
+    const response = await ExpenseService.getExpensByCategory(userId)
+    if (response?.success) {
+      res.status(200).json(response)
+    } else {
+      res.status(400).json(response)
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error })
   }
 }
 
