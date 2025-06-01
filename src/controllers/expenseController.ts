@@ -135,3 +135,23 @@ export const getExpenseByCategory = async (req: Request, res: Response) => {
     res.status(400).json(response)
   }
 }
+
+export const addBudget = async (req: Request, res: Response) => {
+  const { type, amount } = req.body
+  const userId = req?.userId
+
+  if (!userId) {
+    res.status(400).json({ success: false, message: "Invalid Request" })
+    return
+  }
+
+  const response = await ExpenseService.addBudget({
+    userId,
+    ...(type === "budget" ? { budget: amount } : { totalIncome: amount }),
+  })
+  if (response.success) {
+    res.status(200).json(response)
+  } else {
+    res.status(400).json(response)
+  }
+}
