@@ -34,41 +34,46 @@ export const addExpense = async (req: Request, res: Response) => {
 
 // Get Expenses for a user
 export const getExpense = async (req: Request, res: Response) => {
-  const userId = req?.userId
+  try {
+    const userId = req?.userId
 
-  if (!userId) {
-    return res.status(400).json({ success: false, message: "Invalid Request" })
-  }
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid Request" })
+    }
 
-  const {
-    filter,
-    startDate,
-    endDate,
-    page = 1,
-    limit = 10,
-    sortBy = "expenseDate",
-    sortOrder = "desc",
-  } = req.query
+    const {
+      filter,
+      startDate,
+      endDate,
+      page = 1,
+      limit = 10,
+      sortBy = "expenseDate",
+      sortOrder = "desc",
+    } = req.query
 
-  const filters = {
-    filter: filter as string,
-    startDate: startDate as string,
-    endDate: endDate as string,
-    page: parseInt(page as string, 10),
-    limit: parseInt(limit as string, 10),
-    sortBy: sortBy as string,
-    sortOrder: sortOrder as string,
-  }
+    const filters = {
+      filter: filter as string,
+      startDate: startDate as string,
+      endDate: endDate as string,
+      page: parseInt(page as string, 10),
+      limit: parseInt(limit as string, 10),
+      sortBy: sortBy as string,
+      sortOrder: sortOrder as string,
+    }
 
-  const response = await ExpenseService.getExpense({ userId, ...filters })
+    const response = await ExpenseService.getExpense({ userId, ...filters })
 
-  if (response.success) {
-    return res.status(200).json(response)
-  } else {
-    return res.status(400).json(response)
+    if (response.success) {
+      return res.status(200).json(response)
+    } else {
+      return res.status(400).json(response)
+    }
+  } catch (error) {
+    return res.status(400).json({ success: false, message: error })
   }
 }
-
 // Update an Expense
 export const updateExpense = async (req: Request, res: Response) => {
   const { expenseId, amount, description } = req.body

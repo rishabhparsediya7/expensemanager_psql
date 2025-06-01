@@ -141,22 +141,37 @@ class ExpenseService {
         values: [userId, fromDate, toDate, limit, offset],
       }
 
-      // Query to get the aggregate results
-      const aggregateQuery = {
-        text: `
-          SELECT COUNT(*) AS count, SUM(amount) AS sum
-          FROM expenses e
-          WHERE e."userId" = $1 AND e."expenseDate" BETWEEN $2 AND $3
-        `,
-        values: [userId, fromDate, toDate],
-      }
-
-      const aggregateMonth = {
+      // filter total expenses within query range
+      const aggregateRangeQuery = {
         text: `
           SELECT SUM(amount) AS sum FROM expenses e
           WHERE e."userId" = $1 AND e."expenseDate" BETWEEN $2 AND $3
         `,
         values: [userId, fromDate, toDate],
+      }
+
+      // gives previous month total expenses.
+      const aggregatePreviousMonthQuery = {
+        text: `
+          SELECT COUNT(*) AS count, SUM(amount) AS sum
+          FROM expenses e
+          WHERE e."userId" = $1
+            AND e."expenseDate" >= date_trunc('month', NOW() - INTERVAL '1 month')
+            AND e."expenseDate" < date_trunc('month', NOW())
+        `,
+        values: [userId],
+      }
+
+      // gives current month total expenses.
+      const aggregateTotalMonthQuery = {
+        text: `
+          SELECT COUNT(*) AS count, SUM(amount) AS sum
+          FROM expenses e
+          WHERE e."userId" = $1
+            AND e."expenseDate" >= date_trunc('month', NOW())
+            AND e."expenseDate" < date_trunc('month', NOW() + INTERVAL '1 month')
+        `,
+        values: [userId],
       }
 
       // Run both queries concurrently
@@ -168,10 +183,14 @@ class ExpenseService {
         {
           rows: [aggMonth],
         },
+        {
+          rows: [aggPreviousMonth],
+        },
       ] = await Promise.all([
         dbClient.query(expensesQuery),
-        dbClient.query(aggregateQuery),
-        dbClient.query(aggregateMonth),
+        dbClient.query(aggregateTotalMonthQuery),
+        dbClient.query(aggregateRangeQuery),
+        dbClient.query(aggregatePreviousMonthQuery),
       ])
 
       return {
@@ -180,6 +199,7 @@ class ExpenseService {
         totalCount: parseInt(agg.count || "0", 10),
         totalSum: parseFloat(agg.sum || "0"),
         totalMonthSum: parseFloat(aggMonth.sum || "0"),
+        previousMonthSum: parseFloat(aggPreviousMonth.sum || "0"),
         page,
         limit,
       }
