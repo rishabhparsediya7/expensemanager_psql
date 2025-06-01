@@ -174,6 +174,28 @@ class ExpenseService {
         values: [userId],
       }
 
+      const getUserFinanceSummaryQuery = {
+        text: `
+          SELECT "budget", "totalIncome"
+          FROM "userFinancialSummary"
+          WHERE "userId" = $1
+        `,
+        values: [userId],
+      }
+
+      const lastFourExpensesQuery = {
+        text: `
+          SELECT e.*, c.name as category, pm.name as "paymentMethod"
+          FROM expenses e
+          LEFT JOIN category c ON e."categoryId" = c.id
+          LEFT JOIN "paymentMethod" pm ON e."paymentMethodId" = pm.id
+          WHERE e."userId" = $1
+          ORDER BY e."expenseDate" DESC
+          LIMIT $2
+        `,
+        values: [userId, 5],
+      }
+
       // Run both queries concurrently
       const [
         { rows: expenses },
@@ -186,11 +208,17 @@ class ExpenseService {
         {
           rows: [aggPreviousMonth],
         },
+        {
+          rows: [aggUserFinanceSummary],
+        },
+        { rows: lastFourExpenses },
       ] = await Promise.all([
         dbClient.query(expensesQuery),
         dbClient.query(aggregateTotalMonthQuery),
         dbClient.query(aggregateRangeQuery),
         dbClient.query(aggregatePreviousMonthQuery),
+        dbClient.query(getUserFinanceSummaryQuery),
+        dbClient.query(lastFourExpensesQuery),
       ])
 
       return {
@@ -200,6 +228,9 @@ class ExpenseService {
         totalSum: parseFloat(agg.sum || "0"),
         totalMonthSum: parseFloat(aggMonth.sum || "0"),
         previousMonthSum: parseFloat(aggPreviousMonth.sum || "0"),
+        budget: parseFloat(aggUserFinanceSummary.budget || "0"),
+        totalIncome: parseFloat(aggUserFinanceSummary.totalIncome || "0"),
+        lastFourExpenses: lastFourExpenses,
         page,
         limit,
       }
