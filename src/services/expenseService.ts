@@ -110,6 +110,10 @@ class ExpenseService {
           fromDate = now.startOf("year").toISOString() // Start of the year
           toDate = now.endOf("year").toISOString() // End of the year
           break
+        case "today":
+          fromDate = now.startOf("day").toISOString() // Start of today
+          toDate = now.endOf("day").toISOString() // End of today
+          break
         case "custom":
           if (!startDate || !endDate) {
             throw new Error("Custom filter requires startDate and endDate")
