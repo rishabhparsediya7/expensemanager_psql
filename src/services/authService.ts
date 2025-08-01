@@ -85,8 +85,10 @@ class AuthService {
       
       if (isUserExist.rows.length > 0) {
 
+        // if user exists, generate a token
+        // and get the user id from the result
         token = jwt.sign(
-          { userId: isUserExist.rows?.[0]?.[0] }, 
+          { userId: isUserExist.rows?.[0]?.id }, 
           JWT_SECRET,
           { expiresIn: `${JWT_EXPIRATION_MINUTES}m` } 
         )
@@ -96,7 +98,8 @@ class AuthService {
           message: "Login successful",
           name: firstName + " " + lastName,
           token,
-          userId: isUserExist.rows?.[0]?.[0],
+          userId: isUserExist.rows?.[0]?.id,
+          photoUrl: profilePicture,
         }
       }
       
@@ -113,7 +116,11 @@ class AuthService {
         rowMode: "array",
       })
 
+      // when creating the row,
+      // the id is created automatically
+      // so we can get the id from the result with result.rows?.[0]?.[0]
       const userId = result.rows?.[0]?.[0]
+      console.log("🚀 ~ AuthService ~ findOrCreate ~ userId:", userId)
       token = jwt.sign({ userId }, JWT_SECRET, {
         expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
       })
@@ -122,7 +129,9 @@ class AuthService {
         success: true,
         message: "User Entry created",
         token,
+        name: firstName + " " + lastName,
         userId,
+        photoUrl: profilePicture,
       }
     } catch (error) {
       console.log("🚀 ~ AuthServices ~ singup ~ error:", error)

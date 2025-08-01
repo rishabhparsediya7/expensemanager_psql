@@ -9,7 +9,6 @@ export const signinWithGoogle = async (req: Request, res: Response) => {
     return res.status(400).json({ error: "ID token is required" })
   }
   const payload = await verifyGoogleToken(idToken)
-  console.log("🚀 ~ signinWithGoogle ~ payload:", payload)
   const response = await AuthService.findOrCreate(payload.email!, payload.given_name!, payload.family_name!, payload.picture!)
   if (response.success) {
     res.status(200).json(response)
