@@ -100,6 +100,7 @@ class AuthService {
           token,
           userId: isUserExist.rows?.[0]?.id,
           photoUrl: profilePicture,
+          email: email,
         }
       }
       
@@ -132,6 +133,7 @@ class AuthService {
         name: firstName + " " + lastName,
         userId,
         photoUrl: profilePicture,
+        email: email,
       }
     } catch (error) {
       console.log("🚀 ~ AuthServices ~ singup ~ error:", error)
