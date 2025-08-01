@@ -1,5 +1,22 @@
 import { Request, Response } from "express"
 import AuthService from "../services/authService"
+import { verifyGoogleToken } from "../utils/auth"
+
+
+export const signinWithGoogle = async (req: Request, res: Response) => {
+  const idToken = req.headers['id-token'] as string
+  if (!idToken) {
+    return res.status(400).json({ error: "ID token is required" })
+  }
+  const payload = await verifyGoogleToken(idToken)
+  console.log("🚀 ~ signinWithGoogle ~ payload:", payload)
+  const response = await AuthService.findOrCreate(payload.email!, payload.given_name!, payload.family_name!, payload.picture!)
+  if (response.success) {
+    res.status(200).json(response)
+  } else {
+    res.status(400).json(response)
+  }
+}
 
 export const signup = async (req: Request, res: Response) => {
   const { email, firstName, lastName, password } = req.body

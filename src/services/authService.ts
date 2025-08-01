@@ -36,13 +36,85 @@ class AuthService {
       await dbClient.connect()
       const otp = await sendOTPEmail({ email })
       const result = await dbClient.query({
-        text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", otp) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
-        values: [email, firstName, lastName, passwordHash, otp],
+        text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", otp, "provider") VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        values: [email, firstName, lastName, passwordHash, otp, 'email'],
         rowMode: "array",
       })
 
       const userId = result.rows?.[0]?.[0]
       const token = jwt.sign({ userId }, JWT_SECRET, {
+        expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
+      })
+
+      return {
+        success: true,
+        message: "User Entry created",
+        token,
+        userId,
+      }
+    } catch (error) {
+      console.log("🚀 ~ AuthServices ~ singup ~ error:", error)
+
+      return {
+        success: false,
+        message: error,
+      }
+    } finally {
+      await dbClient?.end()
+    }
+  }
+
+  async findOrCreate(email: string, firstName: string, lastName: string, profilePicture: string) {
+    let dbClient
+    try {
+      let token=''
+
+      if(!JWT_SECRET || !JWT_EXPIRATION_MINUTES){
+        return {
+          success: false,
+          message: "JWT_SECRET or JWT_EXPIRATION_MINUTES is not defined",
+        }
+      }
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+
+      const isUserExist = await dbClient.query({
+        text: "SELECT * FROM users WHERE email = $1",
+        values: [email],
+      })
+      
+      if (isUserExist.rows.length > 0) {
+
+        token = jwt.sign(
+          { userId: isUserExist.rows?.[0]?.[0] }, 
+          JWT_SECRET,
+          { expiresIn: `${JWT_EXPIRATION_MINUTES}m` } 
+        )
+
+        return {
+          success: true,
+          message: "Login successful",
+          name: firstName + " " + lastName,
+          token,
+          userId: isUserExist.rows?.[0]?.[0],
+        }
+      }
+      
+      await dbClient.end()
+
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+      
+      // why to send otp using email when the signin happend with email onyl!!!
+      // const otp = await sendOTPEmail({ email })
+      const result = await dbClient.query({
+        text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", "profilePicture", "provider", "isEmailVerified") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        values: [email, firstName, lastName, "", profilePicture, 'google', true],
+        rowMode: "array",
+      })
+
+      const userId = result.rows?.[0]?.[0]
+      token = jwt.sign({ userId }, JWT_SECRET, {
         expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
       })
 

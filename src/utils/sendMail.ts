@@ -57,7 +57,7 @@ export const sendOTPEmail = async ({ email }: { email: string }) => {
 
     // Create mailOptions
     const mailOptions = {
-      from: `Home Manager`,
+      from: `Trakio`,
       to: email,
       subject: "Your OTP for verification",
       text: convert(html),

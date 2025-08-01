@@ -5,7 +5,6 @@ import usersRouter from "./routes/usersRouter"
 import authRouter from "./routes/authRouter"
 import groupRouter from "./routes/groupRouter"
 import expenseRouter from "./routes/expenseRouter"
-import authenticateJWT from "./middlewares/authenticate"
 dotenv.config()
 
 const app = express()
@@ -16,8 +15,6 @@ app.use(express.json())
 
 // Routes
 app.use("/api/auth", authRouter)
-
-// app.use(authenticateJWT)
 
 app.use("/api/users", usersRouter)
 app.use("/api/group", groupRouter)
