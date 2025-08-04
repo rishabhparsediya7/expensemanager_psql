@@ -1,30 +1,39 @@
-import cors from "cors"
-import dotenv from "dotenv"
-import express from "express"
-import usersRouter from "./routes/usersRouter"
-import authRouter from "./routes/authRouter"
-import groupRouter from "./routes/groupRouter"
-import expenseRouter from "./routes/expenseRouter"
-dotenv.config()
+import cors from "cors";
+import dotenv from "dotenv";
+import express from "express";
+import { createServer } from "http";
+import socketModule from "./socket"; // 👈 this is your socket.ts
+import usersRouter from "./routes/usersRouter";
+import authRouter from "./routes/authRouter";
+import groupRouter from "./routes/groupRouter";
+import expenseRouter from "./routes/expenseRouter";
+import chatRouter from "./routes/chatRouter";
 
-const app = express()
-const PORT = process.env.PORT || 3000
+dotenv.config();
 
-app.use(cors())
-app.use(express.json())
+const app = express();
+const httpServer = createServer(app); // 👈 use this instead of app.listen()
+const PORT = process.env.PORT || 3000;
+
+// Middleware
+app.use(cors());
+app.use(express.json());
 
 // Routes
-app.use("/api/auth", authRouter)
-
-app.use("/api/users", usersRouter)
-app.use("/api/group", groupRouter)
-app.use("/api/expense", expenseRouter)
+app.use("/api/auth", authRouter);
+app.use("/api/users", usersRouter);
+app.use("/api/group", groupRouter);
+app.use("/api/expense", expenseRouter);
+app.use("/api/chat", chatRouter);
 
 app.get("/", async (req, res) => {
-  res.status(200).json({ message: "Welcome to the Master Server" })
-})
+  res.status(200).json({ message: "Welcome to the Master Server" });
+});
+
+// 🔌 Initialize Socket.IO
+socketModule.initSocket(httpServer);
 
 // Start server
-app.listen(PORT, async () => {
-  console.log("Server is running at http://localhost:" + PORT)
-})
+httpServer.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+});
