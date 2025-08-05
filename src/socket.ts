@@ -37,7 +37,7 @@ function initSocket(server: any) {
         await dbClient.connect();
 
         const result = await dbClient.query(
-          'SELECT public_key FROM users WHERE id = $1',
+          `SELECT "publicKey" FROM "userKeys" WHERE "userId" = $1`,
           [senderId]
         );
         await dbClient.end()
@@ -47,13 +47,13 @@ function initSocket(server: any) {
           return;
         }
 
-        const senderPublicKey = result.rows[0].public_key;
+        const senderPublicKey = result.rows[0].publicKey;
 
         dbClient = new pg.Client(config)
         await dbClient.connect()
 
         await dbClient.query(
-          'INSERT INTO messages (sender_id, receiver_id, message, nonce) VALUES ($1, $2, $3, $4)',
+          `INSERT INTO messages (sender_id, receiver_id, message, nonce) VALUES ($1, $2, $3, $4)`,
           [senderId, receiverId, message, nonce]
         );
 

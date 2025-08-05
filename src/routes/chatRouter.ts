@@ -1,14 +1,17 @@
 import { Router } from "express"
 import pg from "pg"
 import config from "../database"
-import { getFriends, getHistory, getPublicKey, sendMessage, uploadPublicKey } from "../controllers/chatController"
+import { getFriends, getHistory, getUserKeys, sendMessage, uploadPassphrase, uploadKeys } from "../controllers/chatController"
 
 const router = Router()
 
 // Upload user public key
-router.post('/upload-key', uploadPublicKey);
+router.post('/upload-key', uploadKeys);
 
-router.get('/public-key/:userId', getPublicKey);
+router.post('/upload-passphrase', uploadPassphrase)
+
+
+router.get('/get-user-keys/:userId', getUserKeys);
 
 router.post('/message', sendMessage);
 
