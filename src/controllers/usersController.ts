@@ -68,3 +68,19 @@ export const uploadProfilePic = async (req: Request, res: Response) => {
     res.status(500).json({ error: err.message })
   }
 }
+
+
+export const updateProfile = async (req: Request, res: Response) => {
+  const userId = req?.userId
+
+  if (!userId) {
+    return res.status(400).json({ error: "Unauthorized User" })
+  }
+
+  const response = await UsersService.updateUser(userId, req.body)
+  if (response.success) {
+    res.status(200).json(response)
+  } else {
+    res.status(400).json(response)
+  }
+}

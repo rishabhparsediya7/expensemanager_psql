@@ -1,5 +1,12 @@
 import pg from "pg"
 import config from "../database"
+interface User {
+  firstName: string
+  lastName: string
+  email: string
+  phoneNumber: string
+  updatedAt: Date
+}
 
 class UsersService {
   async getUserById(userId: string) {
@@ -41,23 +48,29 @@ class UsersService {
     try {
       dbClient = new pg.Client(config)
       await dbClient.connect()
-      console.log("Database connected successfully!")
 
-      // Build the SET clause with parameterized values
-      const keys = Object.keys(data)
-      const values = Object.values(data)
+      const firstName = data.name.split(" ")[0]
+      const lastName = data.name.split(" ")[1]
 
-      const setClause = keys
+      const dataObject: User = {
+        firstName,
+        lastName,
+        email: data.email,
+        phoneNumber: data.phoneNumber,
+        updatedAt: new Date(),
+      }
+
+      const setClause = Object.keys(dataObject)
         .map((key, index) => `"${key}" = $${index + 1}`)
         .join(", ")
 
-      // Final value for userId
-      values.push(userId)
+      const clientQueryObject = {
+        text: `UPDATE users SET ${setClause} WHERE id = $${Object.values(dataObject).length + 1}`,
+        values: [...Object.values(dataObject), userId],
+      }
 
-      await dbClient.query(
-        `UPDATE users SET ${setClause} WHERE id = $${values.length}`,
-        values
-      )
+      await dbClient.query(clientQueryObject)
+
       return {
         success: true,
         message: "User updated successfully",

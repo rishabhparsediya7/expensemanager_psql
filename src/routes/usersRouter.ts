@@ -4,6 +4,7 @@ import {
   getProfilePic,
   getUserById,
   uploadProfilePic,
+  updateProfile,
 } from "../controllers/usersController"
 import authenticateJWT from "../middlewares/authenticate"
 
@@ -13,6 +14,8 @@ userRouter.use(authenticateJWT)
 
 const upload = multer({ dest: "uploads/" })
 userRouter.get("/me", getUserById)
+
+userRouter.put("/update-profile", updateProfile)
 
 // POST /upload-profile-pic
 userRouter.post("/upload-profile-pic", upload.single("image"), uploadProfilePic)
