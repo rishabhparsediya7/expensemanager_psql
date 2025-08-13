@@ -1,12 +1,31 @@
 import pg from "pg"
 import config from "../database"
+
 interface User {
+  id: string
+  name?: string
   firstName: string
   lastName: string
   email: string
   phoneNumber: string
+  profilePicture: string
+  createdAt: Date
   updatedAt: Date
+  provider: string
+  budget: string
+  totalIncome: string
 }
+
+type UserForUpdate = Omit<
+  User,
+  | "budget"
+  | "totalIncome"
+  | "createdAt"
+  | "updatedAt"
+  | "profilePicture"
+  | "id"
+  | "provider"
+> & { updatedAt: Date }
 
 class UsersService {
   async getUserById(userId: string) {
@@ -19,18 +38,57 @@ class UsersService {
           console.log("database connected sucesfully!")
         })
         .catch((err) => console.log(err))
+      const query = `SELECT 
+                      u.id,
+                      u."firstName" || ' ' || u."lastName" AS name,
+                      u.email,
+                      u."phoneNumber",
+                      u."profilePicture",
+                      u."createdAt",
+                      u."updatedAt",
+                      u.provider,
+                      ufs.budget,
+                      ufs."totalIncome"
+                    FROM users u
+                    LEFT JOIN "userFinancialSummary" ufs
+                      ON ufs."userId" = u.id
+                      AND ufs."month" = EXTRACT(MONTH FROM CURRENT_DATE)
+                      AND ufs."year" = EXTRACT(YEAR FROM CURRENT_DATE)
+                    WHERE u.id = $1`
       const result = await dbClient.query({
-        text: `select id, "firstName" || ' ' || "lastName" as name, email, "profilePicture", "createdAt", "updatedAt" from users where id = $1`,
+        text: query,
         values: [userId],
       })
 
-      const user: any = result.rows?.[0]
-      const { name, email, id, profilePicture, createdAt, updatedAt } = user
+      const user: User = result.rows?.[0]
+      const {
+        name,
+        email,
+        id,
+        phoneNumber,
+        profilePicture,
+        createdAt,
+        updatedAt,
+        provider,
+        budget,
+        totalIncome,
+      } = user
       return {
         success: true,
         message: "User fetched successfully",
         userId: id,
-        user: { name, email, id, profilePicture, createdAt, updatedAt },
+        user: {
+          name,
+          email,
+          id,
+          phoneNumber,
+          profilePicture,
+          createdAt,
+          updatedAt,
+          userLoginProvider: provider,
+          budget,
+          totalIncome,
+        },
       }
     } catch (error) {
       console.log("🚀 ~ UsersService ~ getUserById ~ error:", error)
@@ -52,7 +110,7 @@ class UsersService {
       const firstName = data.name.split(" ")[0]
       const lastName = data.name.split(" ")[1]
 
-      const dataObject: User = {
+      const dataObject: UserForUpdate = {
         firstName,
         lastName,
         email: data.email,
