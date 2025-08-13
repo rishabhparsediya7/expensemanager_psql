@@ -280,6 +280,53 @@ class AuthService {
       await dbClient?.end()
     }
   }
+
+  async updatePassword(userId:string, currentPassword:string, newPassword:string){
+    let dbClient
+    try {
+      dbClient = new pg.Client(config)
+      await dbClient.connect()     
+      const query = `select * from users where id = $1`
+
+      const result = await dbClient.query({
+        text: query,
+        values: [userId],
+      });
+
+      if(result.rows.length === 0){
+        return { success: false, message: "User not found" }
+      }
+
+      const userPasswordHash = result.rows[0].passwordHash
+      const isLoginProviderEmail = result.rows[0].provider === 'email'
+      
+      // to update the password we make sure that the password 
+      // we are getting is actually exist due to email provider
+      // if the user is using google provider 
+      // then we will not check the current password
+      if(isLoginProviderEmail){
+        const isPasswordValid = await bcrypt.compare(currentPassword, userPasswordHash)
+        if(!isPasswordValid){
+          return { success: false, message: "Invalid current password" }
+        }
+      }
+
+      const saltRounds = 10
+      const passwordHash = await bcrypt.hash(newPassword, saltRounds)
+
+      await dbClient.query({
+        text: `update users set "passwordHash" = $1 where id = $2`,
+        values: [passwordHash, userId],
+      })
+      await dbClient.end()
+      return { success: true, message: "Password updated successfully" }
+    } catch (error) {
+      console.log("🚀 ~ AuthServices ~ updatePassword ~ error:", error)
+      return { success: false, message: "Failed to update password" }
+    } finally {
+      await dbClient?.end()
+    }
+  }
 }
 
 export default new AuthService()
