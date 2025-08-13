@@ -155,7 +155,7 @@ export const getExpenseByCategory = async (req: Request, res: Response) => {
 
 // add budget and income
 export const addBudget = async (req: Request, res: Response) => {
-  const { type, amount } = req.body
+  const { amount, month, year } = req.body
   const userId = req?.userId
 
   if (!userId) {
@@ -163,13 +163,62 @@ export const addBudget = async (req: Request, res: Response) => {
     return
   }
 
-  const response = await ExpenseService.addBudget({
+  const response = await ExpenseService.addOrUpdateBudgetForMonth({
     userId,
-    ...(type === "budget" ? { budget: amount } : { totalIncome: amount }),
+    budget: amount,
+    month,
+    year,
   })
   if (response.success) {
     res.status(200).json(response)
   } else {
     res.status(400).json(response)
+  }
+}
+
+export const addIncome = async (req: Request, res: Response) => {
+  const { amount, month, year } = req.body
+  const userId = req?.userId
+
+  if (!userId) {
+    res.status(400).json({ success: false, message: "Invalid Request" })
+    return
+  }
+
+  const response = await ExpenseService.addOrUpdateIncomeForMonth({
+    userId,
+    income: amount,
+    month,
+    year,
+  })
+  if (response.success) {
+    res.status(200).json(response)
+  } else {
+    res.status(400).json(response)
+  }
+}
+
+export const getUserFinanceSummary = async (req: Request, res: Response) => {
+  const userId = req?.userId
+  const { month, year } = req.body
+
+  if (!userId) {
+    res.status(400).json({ success: false, message: "Invalid Request" })
+    return
+  }
+
+  try {
+    const response = await ExpenseService.getUserFinanceSummary({
+      userId,
+      month,
+      year,
+    })
+    if (response?.success) {
+      res.status(200).json(response)
+    } else {
+      res.status(400).json(response)
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error })
   }
 }

@@ -8,6 +8,8 @@ import {
   getExpenseByCategory,
   addBudget,
   getWeekChart,
+  addIncome,
+  getUserFinanceSummary,
 } from "../controllers/expenseController"
 import authenticateJWT from "../middlewares/authenticate"
 
@@ -34,6 +36,8 @@ expenseRouter.get("/getExpenseByCategory", getExpenseByCategory)
 // finance router
 // add budget
 // add income
-expenseRouter.post("/finance", addBudget)
+expenseRouter.post("/add-budget", addBudget)
+expenseRouter.post("/add-income", addIncome)
+expenseRouter.get("/get-user-finance-summary", getUserFinanceSummary)
 
 export default expenseRouter

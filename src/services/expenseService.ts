@@ -129,9 +129,6 @@ class ExpenseService {
           break
       }
 
-      console.log("fromDate", fromDate)
-      console.log("toDate", toDate)
-
       const offset = (page - 1) * limit
 
       // Query to fetch the filtered expenses
@@ -181,13 +178,19 @@ class ExpenseService {
         values: [userId],
       }
 
+
+      // fetching for the month and year 
+      // for which the dates are being passed
+      const month = dayjs(startDate).month() + 1;
+      const year = dayjs(startDate).year();
+      console.log(month, year)
       const getUserFinanceSummaryQuery = {
         text: `
           SELECT "budget", "totalIncome"
           FROM "userFinancialSummary"
-          WHERE "userId" = $1
+          WHERE "userId" = $1 AND "month" = $2 AND "year" = $3
         `,
-        values: [userId],
+        values: [userId, month, year],
       }
 
       const lastFourExpensesQuery = {
@@ -227,6 +230,8 @@ class ExpenseService {
         dbClient.query(getUserFinanceSummaryQuery),
         dbClient.query(lastFourExpensesQuery),
       ])
+
+      console.log('aggregate user finance summary', aggUserFinanceSummary)
 
       return {
         success: true,
@@ -425,43 +430,160 @@ class ExpenseService {
       await dbClient?.end()
     }
   }
-
-  async addBudget({
+  
+  async addOrUpdateBudgetForMonth({
     userId,
     budget,
-    totalIncome,
+    month: targetMonth,
+    year: targetYear,
   }: {
-    userId: string
-    budget?: number
-    totalIncome?: number
+    userId: string;
+    budget?: number;
+    month?: number;
+    year?: number;
   }) {
-    let dbClient
+    let dbClient;
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
-      await dbClient.query({
-        text: `INSERT INTO "userFinancialSummary" ("userId", "budget", "totalIncome") 
-               VALUES ($1, $2, $3) 
-               ON CONFLICT ("userId") 
-               DO UPDATE SET 
-                 "budget" = COALESCE($2, "userFinancialSummary"."budget"),
-                 "totalIncome" = COALESCE($3, "userFinancialSummary"."totalIncome")`,
-        values: [userId, budget ?? null, totalIncome ?? null],
-      })
-
+      dbClient = new pg.Client(config);
+      await dbClient.connect();
+  
+      // Default to the current month and year if not provided
+      const month: number = targetMonth ?? parseInt(dayjs().format("MM"));
+      const year: number = targetYear ?? parseInt(dayjs().format("YYYY"));
+  
+      const query = {
+        text: `
+          INSERT INTO "userFinancialSummary" ("userId", "month", "year", "budget")
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT ("userId", "month", "year")
+          DO UPDATE SET
+            "budget" = EXCLUDED.budget;
+        `,
+        values: [userId, month, year, budget ?? null],
+      };
+  
+      await dbClient.query(query);
+  
       return {
         success: true,
-        message: `${budget ? "Budget" : "Total Income"} updated successfully.`,
-      }
+        message: "Monthly budget updated successfully.",
+      };
     } catch (error) {
-      console.error("Error in financeService:", error)
+      console.error("Error in financeService (addOrUpdateBudgetForMonth):", error);
       return {
         success: false,
         message: error instanceof Error ? error.message : "An error occurred",
-      }
+      };
     } finally {
-      await dbClient?.end()
+      await dbClient?.end();
+    }
+  }
+  
+  async addOrUpdateIncomeForMonth({
+    userId,
+    income,
+    month: targetMonth,
+    year: targetYear,
+  }: {
+    userId: string;
+    income?: number;
+    month?: number;
+    year?: number;
+  }) {
+    let dbClient;
+    try {
+      dbClient = new pg.Client(config);
+      await dbClient.connect();
+  
+      const month: number = targetMonth ?? parseInt(dayjs().format("MM"));
+      const year: number = targetYear ?? parseInt(dayjs().format("YYYY"));
+  
+      const query = {
+        text: `
+          INSERT INTO "userFinancialSummary" ("userId", "month", "year", "totalIncome")
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT ("userId", "month", "year")
+          DO UPDATE SET
+          "totalIncome" = EXCLUDED."totalIncome";
+        `,
+        values: [userId, month, year, income ?? null],
+      };
+  
+      await dbClient.query(query);
+
+      const result = await dbClient.query(
+        `
+          SELECT "totalIncome", "amountSpent"
+          FROM "userFinancialSummary"
+          WHERE "userId" = $1 AND "month" = $2 AND "year" = $3
+        `,
+        [userId, month, year]
+      );
+
+      if (result.rows.length) {
+        const { totalIncome = 0, amountSpent = 0 } = result.rows[0];
+        const amountSaved = (totalIncome || 0) - (amountSpent || 0);
+        await dbClient.query(
+          `
+            UPDATE "userFinancialSummary"
+            SET "amountSaved" = $4
+            WHERE "userId" = $1 AND "month" = $2 AND "year" = $3
+          `,
+          [userId, month, year, amountSaved]
+        );
+      }
+      return {
+        success: true,
+        message: "Monthly income updated successfully.",
+      };
+    } catch (error) {
+      console.error("Error in financeService (addOrUpdateIncomeForMonth):", error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "An error occurred",
+      };
+    } finally {
+      await dbClient?.end();
+    }
+  }
+
+
+  // this will be only current month's summary
+  async getUserFinanceSummary({userId, month, year}: {userId: string, month?: number, year?: number}) { 
+    let dbClient;
+    try {
+      dbClient = new pg.Client(config);
+      await dbClient.connect();
+
+      const query = {
+        text: `
+          SELECT 
+            "month",
+            "year",
+            "budget",
+            "totalIncome",
+            "amountSpent",
+            "amountSaved"
+          FROM "userFinancialSummary"
+          WHERE "userId" = $1 AND "month" = $2 AND "year" = $3;
+        `,
+        values: [userId, month ?? parseInt(dayjs().format("MM")), year ?? parseInt(dayjs().format("YYYY"))],
+      };
+
+      const { rows: financeSummary } = await dbClient.query(query);
+
+      return {
+        success: true,
+        data: financeSummary,
+      };
+    } catch (error) {
+      console.error("Error in financeService (getUserFinanceSummary):", error);
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "An error occurred",
+      };
+    } finally {
+      await dbClient?.end();
     }
   }
 }

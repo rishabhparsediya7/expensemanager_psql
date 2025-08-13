@@ -117,9 +117,6 @@ class AuthService {
         rowMode: "array",
       })
 
-      // when creating the row,
-      // the id is created automatically
-      // so we can get the id from the result with result.rows?.[0]?.[0]
       const userId = result.rows?.[0]?.[0]
       console.log("🚀 ~ AuthService ~ findOrCreate ~ userId:", userId)
       token = jwt.sign({ userId }, JWT_SECRET, {

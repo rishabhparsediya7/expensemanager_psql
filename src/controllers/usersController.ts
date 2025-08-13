@@ -5,7 +5,6 @@ import fs from "fs"
 
 export const getUserById = async (req: Request, res: Response) => {
   const userId = req?.userId
-  console.log("🚀 ~ getUserById ~ userId:", userId)
 
   if (!userId) {
     return res.status(400).json({ error: "Unauthorized User" })
