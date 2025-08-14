@@ -222,3 +222,23 @@ export const getUserFinanceSummary = async (req: Request, res: Response) => {
     res.status(500).json({ success: false, message: error })
   }
 }
+
+export const getHomeSummary = async (req: Request, res: Response) => {
+  const userId = req?.userId
+
+  if (!userId) {
+    res.status(400).json({ success: false, message: "Invalid Request" })
+    return
+  }
+
+  try {
+    const response = await ExpenseService.getHomeSummary({ userId })
+    if (response?.success) {
+      res.status(200).json(response)
+    } else {
+      res.status(400).json(response)
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error })
+  }
+}

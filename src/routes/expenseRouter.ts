@@ -10,6 +10,7 @@ import {
   getWeekChart,
   addIncome,
   getUserFinanceSummary,
+  getHomeSummary,
 } from "../controllers/expenseController"
 import authenticateJWT from "../middlewares/authenticate"
 
@@ -20,6 +21,8 @@ expenseRouter.use(authenticateJWT)
 expenseRouter.post("/add", addExpense)
 
 expenseRouter.get("/", getExpense)
+
+expenseRouter.get("/get-home-summary", getHomeSummary)
 
 expenseRouter.post("/update", updateExpense)
 

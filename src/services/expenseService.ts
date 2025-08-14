@@ -178,11 +178,10 @@ class ExpenseService {
         values: [userId],
       }
 
-
-      // fetching for the month and year 
+      // fetching for the month and year
       // for which the dates are being passed
-      const month = dayjs(startDate).month() + 1;
-      const year = dayjs(startDate).year();
+      const month = dayjs(startDate).month() + 1
+      const year = dayjs(startDate).year()
       console.log(month, year)
       const getUserFinanceSummaryQuery = {
         text: `
@@ -231,7 +230,7 @@ class ExpenseService {
         dbClient.query(lastFourExpensesQuery),
       ])
 
-      console.log('aggregate user finance summary', aggUserFinanceSummary)
+      console.log("aggregate user finance summary", aggUserFinanceSummary)
 
       return {
         success: true,
@@ -430,27 +429,27 @@ class ExpenseService {
       await dbClient?.end()
     }
   }
-  
+
   async addOrUpdateBudgetForMonth({
     userId,
     budget,
     month: targetMonth,
     year: targetYear,
   }: {
-    userId: string;
-    budget?: number;
-    month?: number;
-    year?: number;
+    userId: string
+    budget?: number
+    month?: number
+    year?: number
   }) {
-    let dbClient;
+    let dbClient
     try {
-      dbClient = new pg.Client(config);
-      await dbClient.connect();
-  
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+
       // Default to the current month and year if not provided
-      const month: number = targetMonth ?? parseInt(dayjs().format("MM"));
-      const year: number = targetYear ?? parseInt(dayjs().format("YYYY"));
-  
+      const month: number = targetMonth ?? parseInt(dayjs().format("MM"))
+      const year: number = targetYear ?? parseInt(dayjs().format("YYYY"))
+
       const query = {
         text: `
           INSERT INTO "userFinancialSummary" ("userId", "month", "year", "budget")
@@ -460,44 +459,47 @@ class ExpenseService {
             "budget" = EXCLUDED.budget;
         `,
         values: [userId, month, year, budget ?? null],
-      };
-  
-      await dbClient.query(query);
-  
+      }
+
+      await dbClient.query(query)
+
       return {
         success: true,
         message: "Monthly budget updated successfully.",
-      };
+      }
     } catch (error) {
-      console.error("Error in financeService (addOrUpdateBudgetForMonth):", error);
+      console.error(
+        "Error in financeService (addOrUpdateBudgetForMonth):",
+        error
+      )
       return {
         success: false,
         message: error instanceof Error ? error.message : "An error occurred",
-      };
+      }
     } finally {
-      await dbClient?.end();
+      await dbClient?.end()
     }
   }
-  
+
   async addOrUpdateIncomeForMonth({
     userId,
     income,
     month: targetMonth,
     year: targetYear,
   }: {
-    userId: string;
-    income?: number;
-    month?: number;
-    year?: number;
+    userId: string
+    income?: number
+    month?: number
+    year?: number
   }) {
-    let dbClient;
+    let dbClient
     try {
-      dbClient = new pg.Client(config);
-      await dbClient.connect();
-  
-      const month: number = targetMonth ?? parseInt(dayjs().format("MM"));
-      const year: number = targetYear ?? parseInt(dayjs().format("YYYY"));
-  
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+
+      const month: number = targetMonth ?? parseInt(dayjs().format("MM"))
+      const year: number = targetYear ?? parseInt(dayjs().format("YYYY"))
+
       const query = {
         text: `
           INSERT INTO "userFinancialSummary" ("userId", "month", "year", "totalIncome")
@@ -507,9 +509,9 @@ class ExpenseService {
           "totalIncome" = EXCLUDED."totalIncome";
         `,
         values: [userId, month, year, income ?? null],
-      };
-  
-      await dbClient.query(query);
+      }
+
+      await dbClient.query(query)
 
       const result = await dbClient.query(
         `
@@ -518,11 +520,11 @@ class ExpenseService {
           WHERE "userId" = $1 AND "month" = $2 AND "year" = $3
         `,
         [userId, month, year]
-      );
+      )
 
       if (result.rows.length) {
-        const { totalIncome = 0, amountSpent = 0 } = result.rows[0];
-        const amountSaved = (totalIncome || 0) - (amountSpent || 0);
+        const { totalIncome = 0, amountSpent = 0 } = result.rows[0]
+        const amountSaved = (totalIncome || 0) - (amountSpent || 0)
         await dbClient.query(
           `
             UPDATE "userFinancialSummary"
@@ -530,30 +532,40 @@ class ExpenseService {
             WHERE "userId" = $1 AND "month" = $2 AND "year" = $3
           `,
           [userId, month, year, amountSaved]
-        );
+        )
       }
       return {
         success: true,
         message: "Monthly income updated successfully.",
-      };
+      }
     } catch (error) {
-      console.error("Error in financeService (addOrUpdateIncomeForMonth):", error);
+      console.error(
+        "Error in financeService (addOrUpdateIncomeForMonth):",
+        error
+      )
       return {
         success: false,
         message: error instanceof Error ? error.message : "An error occurred",
-      };
+      }
     } finally {
-      await dbClient?.end();
+      await dbClient?.end()
     }
   }
 
-
   // this will be only current month's summary
-  async getUserFinanceSummary({userId, month, year}: {userId: string, month?: number, year?: number}) { 
-    let dbClient;
+  async getUserFinanceSummary({
+    userId,
+    month,
+    year,
+  }: {
+    userId: string
+    month?: number
+    year?: number
+  }) {
+    let dbClient
     try {
-      dbClient = new pg.Client(config);
-      await dbClient.connect();
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
 
       const query = {
         text: `
@@ -567,23 +579,100 @@ class ExpenseService {
           FROM "userFinancialSummary"
           WHERE "userId" = $1 AND "month" = $2 AND "year" = $3;
         `,
-        values: [userId, month ?? parseInt(dayjs().format("MM")), year ?? parseInt(dayjs().format("YYYY"))],
-      };
+        values: [
+          userId,
+          month ?? parseInt(dayjs().format("MM")),
+          year ?? parseInt(dayjs().format("YYYY")),
+        ],
+      }
 
-      const { rows: financeSummary } = await dbClient.query(query);
+      const { rows: financeSummary } = await dbClient.query(query)
 
       return {
         success: true,
         data: financeSummary,
-      };
+      }
     } catch (error) {
-      console.error("Error in financeService (getUserFinanceSummary):", error);
+      console.error("Error in financeService (getUserFinanceSummary):", error)
       return {
         success: false,
         message: error instanceof Error ? error.message : "An error occurred",
-      };
+      }
     } finally {
-      await dbClient?.end();
+      await dbClient?.end()
+    }
+  }
+
+  // home page api to get current month's summary
+  // last 5 transactions
+  // budget, income and totalExpenses this month.
+  async getHomeSummary({ userId }: { userId: string }) {
+    let dbClient
+    try {
+      dbClient = new pg.Client(config)
+      await dbClient.connect()
+
+      const last5TransactionsQuery = {
+        text: `
+          SELECT 
+            "expenses"."id",
+            "expenses"."amount",
+            "expenses"."description",
+            "expenses"."expenseDate",
+            "expenses"."paymentMethodId",
+            "category"."name" as "category",
+            "paymentMethod"."name" as "paymentMethod"
+          FROM "expenses"
+          JOIN "category" ON "expenses"."categoryId" = "category"."id"
+          JOIN "paymentMethod" ON "expenses"."paymentMethodId" = "paymentMethod"."id"
+          WHERE "expenses"."userId" = $1 
+          order by "expenses"."expenseDate" desc
+          limit 5;
+        `,
+        values: [
+          userId,
+        ],
+      }
+
+      const financeSummaryQuery = {
+        text: `
+          SELECT
+            "budget",
+            "totalIncome",
+            "amountSpent",
+            "amountSaved"
+          FROM "userFinancialSummary"
+          WHERE "userId" = $1
+            AND "month" = $2
+            AND "year" = $3;
+        `,
+        values: [
+          userId,
+          parseInt(dayjs().format("MM")),
+          parseInt(dayjs().format("YYYY")),
+        ],
+      }
+
+      const [last5TransactionsData, financeSummaryData] = await Promise.all([
+        dbClient.query(last5TransactionsQuery),
+        dbClient.query(financeSummaryQuery),
+      ])
+
+      return {
+        success: true,
+        data: {
+          last5Transactions: last5TransactionsData.rows,
+          financeSummary: financeSummaryData.rows?.[0],
+        },
+      }
+    } catch (error) {
+      console.error("Error in financeService (getHomeSummary):", error)
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : "An error occurred",
+      }
+    } finally {
+      await dbClient?.end()
     }
   }
 }
