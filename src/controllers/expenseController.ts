@@ -1,5 +1,5 @@
 import { Request, Response } from "express"
-import ExpenseService from "../services/expenseService"
+import ExpenseService, { filterType } from "../services/expenseService"
 
 // Add an Expense
 export const addExpense = async (req: Request, res: Response) => {
@@ -51,16 +51,20 @@ export const getExpense = async (req: Request, res: Response) => {
       limit = 10,
       sortBy = "expenseDate",
       sortOrder = "desc",
+      categoryId,
+      paymentMethodId,
     } = req.query
 
     const filters = {
-      filter: filter as string,
+      filter: filter as filterType,
       startDate: startDate as string,
       endDate: endDate as string,
       page: parseInt(page as string, 10),
       limit: parseInt(limit as string, 10),
       sortBy: sortBy as string,
       sortOrder: sortOrder as string,
+      categoryId: categoryId as string,
+      paymentMethodId: paymentMethodId as string,
     }
 
     const response = await ExpenseService.getExpense({ userId, ...filters })

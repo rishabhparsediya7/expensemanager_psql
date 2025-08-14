@@ -3,6 +3,15 @@ import config from "../database"
 import dayjs from "dayjs"
 import isoWeek from "dayjs/plugin/isoWeek"
 
+export type filterType =
+  | "week"
+  | "month"
+  | "year"
+  | "today"
+  | "custom"
+  | "category"
+  | "paymentMethod"
+
 dayjs.extend(isoWeek)
 interface AddExpense {
   userId: string
@@ -59,6 +68,8 @@ class ExpenseService {
   async getExpense({
     userId,
     filter,
+    categoryId = null,
+    paymentMethodId = null,
     startDate,
     endDate,
     page,
@@ -67,7 +78,9 @@ class ExpenseService {
     sortOrder,
   }: {
     userId: string
-    filter?: string
+    filter?: filterType
+    categoryId?: string | null
+    paymentMethodId?: string | null
     startDate?: string
     endDate?: string
     page: number
@@ -78,7 +91,6 @@ class ExpenseService {
     const allowedSortBy = ["expenseDate", "amount", "createdAt"]
     const allowedSortOrder = ["asc", "desc"]
 
-    // Ensure safe sort column and direction
     const sortColumn = allowedSortBy.includes(sortBy)
       ? `"${sortBy}"`
       : '"expenseDate"'
@@ -96,7 +108,6 @@ class ExpenseService {
 
       const now = dayjs()
 
-      // Handle different filter cases
       switch (filter) {
         case "week":
           fromDate = now.startOf("isoWeek").toISOString() // Get start of this week
@@ -122,126 +133,93 @@ class ExpenseService {
           fromDate = dayjs(startDate).startOf("day").toISOString() // Start of custom date range
           toDate = dayjs(endDate).endOf("day").toISOString() // End of custom date range
           break
+        case "category":
+          if (!categoryId) {
+            throw new Error("Category filter requires categoryId")
+          }
+          fromDate = "1970-01-01T00:00:00.000Z" // From a distant past, to include all data
+          toDate = now.endOf("day").toISOString() // Up until today
+          break
+        case "paymentMethod":
+          if (!paymentMethodId) {
+            throw new Error("Payment Method filter requires paymentMethodId")
+          }
+          fromDate = "1970-01-01T00:00:00.000Z" // From a distant past, to include all data
+          toDate = now.endOf("day").toISOString() // Up until today
+          break
         default:
-          // Default: get all expenses up until today
           fromDate = "1970-01-01T00:00:00.000Z" // From a distant past, to include all data
           toDate = now.endOf("day").toISOString() // Up until today
           break
       }
 
       const offset = (page - 1) * limit
+      const whereClauses = []
+      const values = []
+      const paginationValues = [limit, offset];
 
-      // Query to fetch the filtered expenses
+      let paramIndex = 1
+
+      whereClauses.push(`e."userId" = $${paramIndex}`)
+      values.push(userId)
+      paramIndex++
+
+      if (categoryId) {
+        whereClauses.push(`e."categoryId" = $${paramIndex}`)
+        values.push(categoryId)
+        paramIndex++
+      }
+
+      if (paymentMethodId) {
+        whereClauses.push(`e."paymentMethodId" = $${paramIndex}`)
+        values.push(paymentMethodId)
+        paramIndex++
+      }
+
+      whereClauses.push(
+        `e."expenseDate" BETWEEN $${paramIndex} AND $${paramIndex + 1}`
+      )
+      values.push(fromDate, toDate)
+      paramIndex += 2
+
+      const whereString = whereClauses.join(" AND ")
+
+      const allValues = [...values, ...paginationValues]
+
+      const query = `
+        SELECT e.*, c.name as category, pm.name as "paymentMethod"
+        FROM expenses e
+        LEFT JOIN category c ON e."categoryId" = c.id
+        LEFT JOIN "paymentMethod" pm ON e."paymentMethodId" = pm.id
+        WHERE ${whereString}
+        ORDER BY ${sortColumn} ${sortDirection}, e."createdAt" ${sortDirection}
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+      `
+      const toalSumClientQuery = `
+        SELECT SUM(e."amount") as total
+        FROM expenses e
+        LEFT JOIN category c ON e."categoryId" = c.id
+        LEFT JOIN "paymentMethod" pm ON e."paymentMethodId" = pm.id
+        WHERE ${whereString}
+      `
+      const totalSumQuery = {
+        text: toalSumClientQuery,
+        values: values,
+      }
       const expensesQuery = {
-        text: `
-          SELECT e.*, c.name as category, pm.name as "paymentMethod"
-          FROM expenses e
-          LEFT JOIN category c ON e."categoryId" = c.id
-          LEFT JOIN "paymentMethod" pm ON e."paymentMethodId" = pm.id
-          WHERE e."userId" = $1 AND e."expenseDate" BETWEEN $2 AND $3
-          ORDER BY ${sortColumn} ${sortDirection}, e."createdAt" ${sortDirection}
-          LIMIT $4 OFFSET $5
-        `,
-        values: [userId, fromDate, toDate, limit, offset],
+        text: query,
+        values: allValues,
       }
 
-      // filter total expenses within query range
-      const aggregateRangeQuery = {
-        text: `
-          SELECT SUM(amount) AS sum FROM expenses e
-          WHERE e."userId" = $1 AND e."expenseDate" BETWEEN $2 AND $3
-        `,
-        values: [userId, fromDate, toDate],
-      }
-
-      // gives previous month total expenses.
-      const aggregatePreviousMonthQuery = {
-        text: `
-          SELECT COUNT(*) AS count, SUM(amount) AS sum
-          FROM expenses e
-          WHERE e."userId" = $1
-            AND e."expenseDate" >= date_trunc('month', NOW() - INTERVAL '1 month')
-            AND e."expenseDate" < date_trunc('month', NOW())
-        `,
-        values: [userId],
-      }
-
-      // gives current month total expenses.
-      const aggregateTotalMonthQuery = {
-        text: `
-          SELECT COUNT(*) AS count, SUM(amount) AS sum
-          FROM expenses e
-          WHERE e."userId" = $1
-            AND e."expenseDate" >= date_trunc('month', NOW())
-            AND e."expenseDate" < date_trunc('month', NOW() + INTERVAL '1 month')
-        `,
-        values: [userId],
-      }
-
-      // fetching for the month and year
-      // for which the dates are being passed
-      const month = dayjs(startDate).month() + 1
-      const year = dayjs(startDate).year()
-      console.log(month, year)
-      const getUserFinanceSummaryQuery = {
-        text: `
-          SELECT "budget", "totalIncome"
-          FROM "userFinancialSummary"
-          WHERE "userId" = $1 AND "month" = $2 AND "year" = $3
-        `,
-        values: [userId, month, year],
-      }
-
-      const lastFourExpensesQuery = {
-        text: `
-          SELECT e.*, c.name as category, pm.name as "paymentMethod"
-          FROM expenses e
-          LEFT JOIN category c ON e."categoryId" = c.id
-          LEFT JOIN "paymentMethod" pm ON e."paymentMethodId" = pm.id
-          WHERE e."userId" = $1
-          ORDER BY e."expenseDate" DESC
-          LIMIT $2
-        `,
-        values: [userId, 5],
-      }
-
-      // Run both queries concurrently
-      const [
-        { rows: expenses },
-        {
-          rows: [aggMonth],
-        },
-        {
-          rows: [agg],
-        },
-        {
-          rows: [aggPreviousMonth],
-        },
-        {
-          rows: [aggUserFinanceSummary],
-        },
-        { rows: lastFourExpenses },
-      ] = await Promise.all([
+      const [{ rows: expenses }, { rows: totalSum }] = await Promise.all([
         dbClient.query(expensesQuery),
-        dbClient.query(aggregateTotalMonthQuery),
-        dbClient.query(aggregateRangeQuery),
-        dbClient.query(aggregatePreviousMonthQuery),
-        dbClient.query(getUserFinanceSummaryQuery),
-        dbClient.query(lastFourExpensesQuery),
+        dbClient.query(totalSumQuery),
       ])
-
-      console.log("aggregate user finance summary", aggUserFinanceSummary)
 
       return {
         success: true,
         data: expenses,
-        totalCount: parseInt(agg?.count || "0", 10),
-        totalSum: parseFloat(agg?.sum || "0"),
-        totalMonthSum: parseFloat(aggMonth?.sum || "0"),
-        previousMonthSum: parseFloat(aggPreviousMonth?.sum || "0"),
-        budget: parseFloat(aggUserFinanceSummary?.budget || "0"),
-        totalIncome: parseFloat(aggUserFinanceSummary?.totalIncome || "0"),
-        lastFourExpenses: lastFourExpenses,
+        total: totalSum[0].total,
         page,
         limit,
       }
@@ -629,9 +607,7 @@ class ExpenseService {
           order by "expenses"."expenseDate" desc
           limit 5;
         `,
-        values: [
-          userId,
-        ],
+        values: [userId],
       }
 
       const financeSummaryQuery = {
