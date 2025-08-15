@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Expense Report</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            color: #333;
+            font-size: 14px;
+        }
+
+        .report-box {
+            max-width: 800px;
+            margin: auto;
+            padding: 30px;
+            border: 1px solid #eee;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.15);
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f2f2f2;
+        }
+
+        .header h1 {
+            margin: 0;
+            color: #1a1a1a;
+            font-size: 24px;
+        }
+
+        .user-info {
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .user-info div {
+            margin-bottom: 5px;
+            color: #555;
+        }
+        
+        .user-info strong {
+            display: inline-block;
+            width: 120px;
+            color: #333;
+        }
+
+        .expense-table {
+            width: 100%;
+            line-height: inherit;
+            text-align: left;
+            border-collapse: collapse;
+        }
+
+        .expense-table th {
+            background: #f7f7f7;
+            padding: 10px;
+            border: 1px solid #ddd;
+            font-weight: bold;
+            text-align: left;
+        }
+
+        .expense-table td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            vertical-align: top;
+        }
+
+        /* Zebra-striping for better readability */
+        .expense-table tbody tr:nth-child(even) {
+            background: #fbfbfb;
+        }
+
+        .align-right {
+            text-align: right;
+        }
+
+        .totals {
+            text-align: right;
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 2px solid #f2f2f2;
+            font-size: 1.1em;
+            font-weight: bold;
+        }
+
+        .totals .label {
+            color: #555;
+            display: inline-block;
+            margin-right: 15px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="report-box">
+        <div class="header">
+            <h1>Expense Report</h1>
+            <p>Generated on: {{reportDate}}</p>
+        </div>
+
+        <div class="user-info">
+            <div><strong>User Name:</strong> {{userName}}</div>
+            <div><strong>Email:</strong> {{userEmail}}</div>
+        </div>
+
+        <table class="expense-table">
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th>Payment Method</th>
+                    <th>Date</th>
+                    <th class="align-right">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{expenseRows}}
+            </tbody>
+        </table>
+
+        <div class="totals">
+            <div>
+                <span class="label">Total Expenses:</span> {{totalCount}}
+            </div>
+            <div style="margin-top: 8px;">
+                <span class="label">Total Amount:</span> ₹{{totalAmount}}
+            </div>
+        </div>
+    </div>
+</body>
+</html>
