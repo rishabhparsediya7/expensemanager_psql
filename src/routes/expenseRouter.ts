@@ -107,14 +107,6 @@ expenseRouter.get("/generate-report", async (req, res) => {
     
 
   try {
-    const reportData = {
-      name: user.rows[0].name,
-      userId,
-      reportDate: new Date().toLocaleDateString(),
-      reportContent:
-        "This is the main content of the report, fetched from the database or another service. It can be as long as needed and will be placed inside the PDF.",
-    }
-
     if (!expenses) {
       expenses = []
     }
