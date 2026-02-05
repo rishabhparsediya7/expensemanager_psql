@@ -66,7 +66,7 @@ expenseRouter.get("/generate-report", async (req, res) => {
     return res.status(400).json({ success: false, message: "Invalid Request" })
   }
 
-  let dbClient: pg.Client;
+  let dbClient: pg.Client
   dbClient = new pg.Client(config)
   await dbClient.connect()
   const user = await dbClient.query({
@@ -104,7 +104,6 @@ expenseRouter.get("/generate-report", async (req, res) => {
   })
   let expenses = response.data
   let totalAmount = response.total
-    
 
   try {
     if (!expenses) {
@@ -132,14 +131,16 @@ expenseRouter.get("/generate-report", async (req, res) => {
     let htmlContent = fs.readFileSync(templatePath, "utf8")
 
     htmlContent = htmlContent
-        .replace('{{reportDate}}', new Date().toLocaleDateString('en-GB'))
-        .replace('{{userName}}', user.rows[0].firstName + " " + user.rows[0].lastName)
-        .replace('{{userEmail}}', user.rows[0].email)
-        .replace('{{expenseRows}}', expenseRowsHtml)
-        .replace('{{totalCount}}', String(expenses.length))
-        .replace('{{totalAmount}}', Number(totalAmount)?.toFixed(2));
+      .replace("{{reportDate}}", new Date().toLocaleDateString("en-GB"))
+      .replace(
+        "{{userName}}",
+        user.rows[0].firstName + " " + user.rows[0].lastName
+      )
+      .replace("{{userEmail}}", user.rows[0].email)
+      .replace("{{expenseRows}}", expenseRowsHtml)
+      .replace("{{totalCount}}", String(expenses.length))
+      .replace("{{totalAmount}}", Number(totalAmount)?.toFixed(2))
 
-    console.log("Launching Puppeteer...")
     const browser = await puppeteer.launch({
       headless: true,
       args: ["--no-sandbox", "--disable-setuid-sandbox"],
@@ -163,8 +164,7 @@ expenseRouter.get("/generate-report", async (req, res) => {
   } catch (error) {
     console.error("Error generating PDF:", error)
     res.status(500).send("Could not generate PDF. Please try again later.")
-  }
-  finally {
+  } finally {
     await dbClient?.end()
   }
 })

@@ -37,7 +37,7 @@ class AuthService {
       const otp = await sendOTPEmail({ email })
       const result = await dbClient.query({
         text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", otp, "provider") VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        values: [email, firstName, lastName, passwordHash, otp, 'email'],
+        values: [email, firstName, lastName, passwordHash, otp, "email"],
         rowMode: "array",
       })
 
@@ -64,12 +64,17 @@ class AuthService {
     }
   }
 
-  async findOrCreate(email: string, firstName: string, lastName: string, profilePicture: string) {
+  async findOrCreate(
+    email: string,
+    firstName: string,
+    lastName: string,
+    profilePicture: string
+  ) {
     let dbClient
     try {
-      let token=''
+      let token = ""
 
-      if(!JWT_SECRET || !JWT_EXPIRATION_MINUTES){
+      if (!JWT_SECRET || !JWT_EXPIRATION_MINUTES) {
         return {
           success: false,
           message: "JWT_SECRET or JWT_EXPIRATION_MINUTES is not defined",
@@ -82,16 +87,13 @@ class AuthService {
         text: "SELECT * FROM users WHERE email = $1",
         values: [email],
       })
-      
-      if (isUserExist.rows.length > 0) {
 
+      if (isUserExist.rows.length > 0) {
         // if user exists, generate a token
         // and get the user id from the result
-        token = jwt.sign(
-          { userId: isUserExist.rows?.[0]?.id }, 
-          JWT_SECRET,
-          { expiresIn: `${JWT_EXPIRATION_MINUTES}m` } 
-        )
+        token = jwt.sign({ userId: isUserExist.rows?.[0]?.id }, JWT_SECRET, {
+          expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
+        })
 
         return {
           success: true,
@@ -103,22 +105,29 @@ class AuthService {
           email: email,
         }
       }
-      
+
       await dbClient.end()
 
       dbClient = new pg.Client(config)
       await dbClient.connect()
-      
+
       // why to send otp using email when the signin happend with email onyl!!!
       // const otp = await sendOTPEmail({ email })
       const result = await dbClient.query({
         text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", "profilePicture", "provider", "isEmailVerified") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        values: [email, firstName, lastName, "", profilePicture, 'google', true],
+        values: [
+          email,
+          firstName,
+          lastName,
+          "",
+          profilePicture,
+          "google",
+          true,
+        ],
         rowMode: "array",
       })
 
       const userId = result.rows?.[0]?.[0]
-      console.log("🚀 ~ AuthService ~ findOrCreate ~ userId:", userId)
       token = jwt.sign({ userId }, JWT_SECRET, {
         expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
       })
@@ -201,7 +210,6 @@ class AuthService {
   }
 
   async sendOTP(email: string) {
-    console.log("🚀 ~ AuthService ~ sendOTP ~ email:", email)
     let dbClient
     try {
       const otp = Math.floor(100000 + Math.random() * 900000).toString()
@@ -281,32 +289,39 @@ class AuthService {
     }
   }
 
-  async updatePassword(userId:string, currentPassword:string, newPassword:string){
+  async updatePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string
+  ) {
     let dbClient
     try {
       dbClient = new pg.Client(config)
-      await dbClient.connect()     
+      await dbClient.connect()
       const query = `select * from users where id = $1`
 
       const result = await dbClient.query({
         text: query,
         values: [userId],
-      });
+      })
 
-      if(result.rows.length === 0){
+      if (result.rows.length === 0) {
         return { success: false, message: "User not found" }
       }
 
       const userPasswordHash = result.rows[0].passwordHash
-      const isLoginProviderEmail = result.rows[0].provider === 'email'
-      
-      // to update the password we make sure that the password 
+      const isLoginProviderEmail = result.rows[0].provider === "email"
+
+      // to update the password we make sure that the password
       // we are getting is actually exist due to email provider
-      // if the user is using google provider 
+      // if the user is using google provider
       // then we will not check the current password
-      if(isLoginProviderEmail){
-        const isPasswordValid = await bcrypt.compare(currentPassword, userPasswordHash)
-        if(!isPasswordValid){
+      if (isLoginProviderEmail) {
+        const isPasswordValid = await bcrypt.compare(
+          currentPassword,
+          userPasswordHash
+        )
+        if (!isPasswordValid) {
           return { success: false, message: "Invalid current password" }
         }
       }
