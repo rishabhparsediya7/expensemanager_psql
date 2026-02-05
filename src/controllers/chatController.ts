@@ -4,6 +4,7 @@ import config from "../database"
 import { db } from "../db"
 import { friends, users, messages } from "../db/schema"
 import { and, eq, or, desc, sql } from "drizzle-orm"
+import { getIO, onlineUsers } from "../socket"
 
 export const uploadKeys = async (req: Request, res: Response) => {
   const { userId, publicKey, privateKey } = req.body
@@ -212,6 +213,26 @@ export const sendSplinkRequest = async (req: Request, res: Response) => {
       status: "pending",
     })
 
+    // 🔌 Socket notification: Notify receiver of new request
+    const receiverSocketId = onlineUsers.get(friendId)
+    if (receiverSocketId) {
+      // Fetch sender info for a better notification
+      const sender = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
+      const senderName =
+        sender.length > 0
+          ? `${sender[0].firstName} ${sender[0].lastName}`
+          : "Someone"
+
+      getIO().to(receiverSocketId).emit("splink_request", {
+        fromId: userId,
+        fromName: senderName,
+      })
+    }
+
     res.status(200).json({ success: true, message: "Splink request sent" })
   } catch (err) {
     console.error("❌ Error sending Splink request:", err)
@@ -252,19 +273,29 @@ export const respondToSplinkRequest = async (req: Request, res: Response) => {
             set: { status: "accepted" },
           })
       })
-
-      res
-        .status(200)
-        .json({ success: true, message: "Splink request accepted" })
     } else {
       await db
         .delete(friends)
         .where(and(eq(friends.userId, friendId), eq(friends.friendId, userId)))
-
-      res
-        .status(200)
-        .json({ success: true, message: "Splink request rejected" })
     }
+
+    // 🔌 Socket notification: Notify sender/receiver of status change
+    const targetId = friendId // Original sender
+    const targetSocketId = onlineUsers.get(targetId)
+    if (targetSocketId) {
+      getIO().to(targetSocketId).emit("splink_response", {
+        byUserId: userId,
+        action,
+      })
+    }
+
+    res.status(200).json({
+      success: true,
+      message:
+        action === "accept"
+          ? "Splink request accepted"
+          : "Splink request rejected",
+    })
   } catch (err) {
     console.error("❌ Error responding to Splink request:", err)
     res.status(500).json({ error: "Failed to respond to Splink request" })
