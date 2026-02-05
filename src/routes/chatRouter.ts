@@ -9,6 +9,9 @@ import {
   sendMessage,
   uploadPassphrase,
   uploadKeys,
+  sendSplinkRequest,
+  respondToSplinkRequest,
+  getPendingSplinks,
 } from "../controllers/chatController"
 
 const router = Router()
@@ -28,5 +31,9 @@ router.post("/message", sendMessage)
 router.get("/history", getHistory)
 
 router.get("/getFriends/:userId", getFriends)
+
+router.post("/splink/request", sendSplinkRequest)
+router.post("/splink/response", respondToSplinkRequest)
+router.get("/splink/pending", getPendingSplinks)
 
 export default router

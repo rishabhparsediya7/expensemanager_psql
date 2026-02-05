@@ -1,5 +1,8 @@
 import pg from "pg"
 import config from "../database"
+import { db } from "../db"
+import { users } from "../db/schema"
+import { or, ilike, and, ne } from "drizzle-orm"
 
 interface User {
   id: string
@@ -203,6 +206,41 @@ class UsersService {
       }
     } finally {
       await dbClient?.end()
+    }
+  }
+  async searchUsers(query: string, currentUserId: string) {
+    try {
+      const results = await db
+        .select({
+          id: users.id,
+          firstName: users.firstName,
+          lastName: users.lastName,
+          email: users.email,
+          phoneNumber: users.phoneNumber,
+          profilePicture: users.profilePicture,
+        })
+        .from(users)
+        .where(
+          and(
+            ne(users.id, currentUserId),
+            or(
+              ilike(users.email, `%${query}%`),
+              ilike(users.phoneNumber, `%${query}%`)
+            )
+          )
+        )
+        .limit(20)
+
+      return {
+        success: true,
+        users: results,
+      }
+    } catch (error) {
+      console.log("🚀 ~ UsersService ~ searchUsers ~ error:", error)
+      return {
+        success: false,
+        message: (error as Error).message,
+      }
     }
   }
 }

@@ -69,7 +69,6 @@ export const uploadProfilePic = async (req: Request, res: Response) => {
   }
 }
 
-
 export const updateProfile = async (req: Request, res: Response) => {
   const userId = req?.userId
 
@@ -82,5 +81,25 @@ export const updateProfile = async (req: Request, res: Response) => {
     res.status(200).json(response)
   } else {
     res.status(400).json(response)
+  }
+}
+
+export const searchUsers = async (req: Request, res: Response) => {
+  const userId = req?.userId
+  const query = req.query.q as string
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" })
+  }
+
+  if (!query) {
+    return res.status(400).json({ error: "Search query is required" })
+  }
+
+  const response = await UsersService.searchUsers(query, userId)
+  if (response.success) {
+    res.status(200).json(response)
+  } else {
+    res.status(500).json(response)
   }
 }

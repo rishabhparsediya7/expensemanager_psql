@@ -15,6 +15,13 @@
       "when": 1768468130626,
       "tag": "0001_neat_metal_master",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1770302462186,
+      "tag": "0002_conscious_red_ghost",
+      "breakpoints": true
     }
   ]
 }

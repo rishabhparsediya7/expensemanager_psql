@@ -5,6 +5,7 @@ import {
   getUserById,
   uploadProfilePic,
   updateProfile,
+  searchUsers,
 } from "../controllers/usersController"
 import authenticateJWT from "../middlewares/authenticate"
 
@@ -16,6 +17,7 @@ const upload = multer({ dest: "uploads/" })
 userRouter.get("/me", getUserById)
 
 userRouter.put("/update-profile", updateProfile)
+userRouter.get("/search", searchUsers)
 
 // POST /upload-profile-pic
 // Cast to RequestHandler to fix type mismatch between multer and express types

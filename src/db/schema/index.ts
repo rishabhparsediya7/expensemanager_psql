@@ -158,6 +158,7 @@ export const friends = pgTable(
     id: uuid().defaultRandom().primaryKey().notNull(),
     userId: uuid("user_id").notNull(),
     friendId: uuid("friend_id").notNull(),
+    status: varchar({ length: 20 }).default("pending").notNull(), // pending, accepted, rejected
     createdAt: timestamp("created_at", { mode: "string" }).defaultNow(),
   },
   (table) => [

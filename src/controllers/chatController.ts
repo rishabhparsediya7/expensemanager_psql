@@ -1,6 +1,9 @@
 import pg from "pg"
 import { Request, Response } from "express"
 import config from "../database"
+import { db } from "../db"
+import { friends, users, messages } from "../db/schema"
+import { and, eq, or, desc, sql } from "drizzle-orm"
 
 export const uploadKeys = async (req: Request, res: Response) => {
   const { userId, publicKey, privateKey } = req.body
@@ -113,7 +116,7 @@ export const getFriends = async (req: Request, res: Response) => {
             ORDER BY sent_at DESC
             LIMIT 1
           ) m ON TRUE
-          WHERE f.user_id = $1
+          WHERE f.user_id = $1 AND f.status = 'accepted'
           ORDER BY m.sent_at DESC NULLS LAST;
         `,
       values: [userId],
@@ -174,5 +177,123 @@ export const getPassphrase = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Error fetching passphrase" })
   } finally {
     await dbClient?.end()
+  }
+}
+
+export const sendSplinkRequest = async (req: Request, res: Response) => {
+  const userId = req.userId
+  const { friendId } = req.body
+
+  if (!userId || !friendId) {
+    return res.status(400).json({ error: "User IDs are required" })
+  }
+
+  try {
+    // Check if request already exists
+    const existing = await db
+      .select()
+      .from(friends)
+      .where(
+        or(
+          and(eq(friends.userId, userId), eq(friends.friendId, friendId)),
+          and(eq(friends.userId, friendId), eq(friends.friendId, userId))
+        )
+      )
+
+    if (existing.length > 0) {
+      return res.status(400).json({
+        error: "Connection request already exists or you are already friends",
+      })
+    }
+
+    await db.insert(friends).values({
+      userId,
+      friendId,
+      status: "pending",
+    })
+
+    res.status(200).json({ success: true, message: "Splink request sent" })
+  } catch (err) {
+    console.error("❌ Error sending Splink request:", err)
+    res.status(500).json({ error: "Failed to send Splink request" })
+  }
+}
+
+export const respondToSplinkRequest = async (req: Request, res: Response) => {
+  const userId = req.userId
+  const { friendId, action } = req.body // action: 'accept' or 'reject'
+
+  if (!userId || !friendId || !action) {
+    return res.status(400).json({ error: "Required fields missing" })
+  }
+
+  try {
+    if (action === "accept") {
+      // Start transaction or sequential updates
+      await db.transaction(async (tx) => {
+        // Update the received request to accepted
+        await tx
+          .update(friends)
+          .set({ status: "accepted" })
+          .where(
+            and(eq(friends.userId, friendId), eq(friends.friendId, userId))
+          )
+
+        // Create the reverse connection for mutual friendship
+        await tx
+          .insert(friends)
+          .values({
+            userId: userId,
+            friendId: friendId,
+            status: "accepted",
+          })
+          .onConflictDoUpdate({
+            target: [friends.userId, friends.friendId],
+            set: { status: "accepted" },
+          })
+      })
+
+      res
+        .status(200)
+        .json({ success: true, message: "Splink request accepted" })
+    } else {
+      await db
+        .delete(friends)
+        .where(and(eq(friends.userId, friendId), eq(friends.friendId, userId)))
+
+      res
+        .status(200)
+        .json({ success: true, message: "Splink request rejected" })
+    }
+  } catch (err) {
+    console.error("❌ Error responding to Splink request:", err)
+    res.status(500).json({ error: "Failed to respond to Splink request" })
+  }
+}
+
+export const getPendingSplinks = async (req: Request, res: Response) => {
+  const userId = req.userId
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" })
+  }
+
+  try {
+    const pending = await db
+      .select({
+        friendId: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        profilePicture: users.profilePicture,
+        status: friends.status,
+      })
+      .from(friends)
+      .innerJoin(users, eq(users.id, friends.userId))
+      .where(and(eq(friends.friendId, userId), eq(friends.status, "pending")))
+
+    res.status(200).json(pending)
+  } catch (err) {
+    console.error("❌ Error fetching pending Splinks:", err)
+    res.status(500).json({ error: "Failed to fetch pending Splinks" })
   }
 }
