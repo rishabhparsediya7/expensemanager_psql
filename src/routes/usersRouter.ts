@@ -1,4 +1,4 @@
-import express from "express"
+import express, { RequestHandler } from "express"
 import multer from "multer"
 import {
   getProfilePic,
@@ -18,7 +18,12 @@ userRouter.get("/me", getUserById)
 userRouter.put("/update-profile", updateProfile)
 
 // POST /upload-profile-pic
-userRouter.post("/upload-profile-pic", upload.single("image"), uploadProfilePic)
+// Cast to RequestHandler to fix type mismatch between multer and express types
+userRouter.post(
+  "/upload-profile-pic",
+  upload.single("image") as unknown as RequestHandler,
+  uploadProfilePic
+)
 
 // GET /profile-pic
 userRouter.get("/profile-pic", getProfilePic)
