@@ -392,3 +392,19 @@ export const userBalances = pgTable(
     unique("userBalances_user_friend_unique").on(table.userId, table.friendId),
   ]
 )
+
+// ======================================
+// OTP Transactions Table
+// ======================================
+
+export const otpTransactions = pgTable("otpTransactions", {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  email: varchar({ length: 150 }).notNull(),
+  otp: varchar({ length: 10 }).notNull(),
+  context: varchar({ length: 50 }).notNull(), // 'signup', 'forgot_password', etc
+  isUsed: boolean().default(false).notNull(),
+  expiresAt: timestamp({ withTimezone: true, mode: "string" }).notNull(),
+  createdAt: timestamp({ withTimezone: true, mode: "string" })
+    .defaultNow()
+    .notNull(),
+})

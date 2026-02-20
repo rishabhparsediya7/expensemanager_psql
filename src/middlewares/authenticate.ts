@@ -19,7 +19,7 @@ const authenticateJWT = (req: Request, res: Response, next: NextFunction) => {
         message: "Invalid or expired token.",
       })
     }
-    req.userId = decoded?.userId
+    req.userId = (decoded as jwt.JwtPayload)?.userId
     next()
   })
 }

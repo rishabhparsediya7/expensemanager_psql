@@ -1,11 +1,14 @@
-import pg from "pg"
-import config from "../database"
 import jwt from "jsonwebtoken"
 import bcrypt from "bcrypt"
-import { sendOTPEmail } from "../utils/sendMail"
+import { sendSignupEmail, sendForgotPasswordEmail } from "../utils/sendMail"
+import { db } from "../db/index"
+import { users, otpTransactions } from "../db/schema"
+import { eq, desc, and } from "drizzle-orm"
 
-const JWT_SECRET = process.env.JWT_SECRET ?? ""
-const JWT_EXPIRATION_MINUTES = process.env.JWT_EXPIRATION_MINUTES
+const JWT_SECRET = (process.env.JWT_SECRET as string) || "secret"
+const JWT_EXPIRATION_MINUTES =
+  parseInt(process.env.JWT_EXPIRATION_MINUTES || "60") * 60
+
 class AuthService {
   async signup(
     email: string,
@@ -15,35 +18,50 @@ class AuthService {
   ) {
     const saltRounds = 10
     const passwordHash = await bcrypt.hash(password, saltRounds)
-    let dbClient
-    try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
 
-      const isUserExist = await dbClient.query({
-        text: "SELECT * FROM users WHERE email = $1",
-        values: [email],
-      })
-      if (isUserExist.rows.length > 0) {
+    try {
+      const isUserExist = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
+
+      if (isUserExist.length > 0) {
         return {
           success: false,
           message: "User already exists",
         }
       }
-      await dbClient.end()
 
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-      const otp = await sendOTPEmail({ email })
-      const result = await dbClient.query({
-        text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", otp, "provider") VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-        values: [email, firstName, lastName, passwordHash, otp, "email"],
-        rowMode: "array",
+      const otp = Math.floor(100000 + Math.random() * 900000).toString()
+      await sendSignupEmail({ email, otp })
+
+      const result = await db
+        .insert(users)
+        .values({
+          email,
+          firstName,
+          lastName,
+          passwordHash,
+          provider: "email",
+        })
+        .returning({ id: users.id })
+
+      const expiresAt = new Date()
+      expiresAt.setMinutes(
+        expiresAt.getMinutes() +
+          parseInt(String(process.env.OTP_EXPIRATION_MINUTES || 10))
+      )
+
+      await db.insert(otpTransactions).values({
+        email,
+        otp,
+        context: "signup",
+        expiresAt: expiresAt.toISOString(),
       })
 
-      const userId = result.rows?.[0]?.[0]
+      const userId = result[0]?.id
       const token = jwt.sign({ userId }, JWT_SECRET, {
-        expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
+        expiresIn: JWT_EXPIRATION_MINUTES,
       })
 
       return {
@@ -59,8 +77,6 @@ class AuthService {
         success: false,
         message: error,
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 
@@ -70,29 +86,17 @@ class AuthService {
     lastName: string,
     profilePicture: string
   ) {
-    let dbClient
     try {
       let token = ""
 
-      if (!JWT_SECRET || !JWT_EXPIRATION_MINUTES) {
-        return {
-          success: false,
-          message: "JWT_SECRET or JWT_EXPIRATION_MINUTES is not defined",
-        }
-      }
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
+      const isUserExist = await db
+        .select()
+        .from(users)
+        .where(eq(users.email, email))
 
-      const isUserExist = await dbClient.query({
-        text: "SELECT * FROM users WHERE email = $1",
-        values: [email],
-      })
-
-      if (isUserExist.rows.length > 0) {
-        // if user exists, generate a token
-        // and get the user id from the result
-        token = jwt.sign({ userId: isUserExist.rows?.[0]?.id }, JWT_SECRET, {
-          expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
+      if (isUserExist.length > 0) {
+        token = jwt.sign({ userId: isUserExist[0]?.id }, JWT_SECRET, {
+          expiresIn: JWT_EXPIRATION_MINUTES,
         })
 
         return {
@@ -100,36 +104,28 @@ class AuthService {
           message: "Login successful",
           name: firstName + " " + lastName,
           token,
-          userId: isUserExist.rows?.[0]?.id,
+          userId: isUserExist[0]?.id,
           photoUrl: profilePicture,
           email: email,
         }
       }
 
-      await dbClient.end()
-
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
-      // why to send otp using email when the signin happend with email onyl!!!
-      // const otp = await sendOTPEmail({ email })
-      const result = await dbClient.query({
-        text: `INSERT INTO users (email, "firstName", "lastName", "passwordHash", "profilePicture", "provider", "isEmailVerified") VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        values: [
+      const result = await db
+        .insert(users)
+        .values({
           email,
           firstName,
           lastName,
-          "",
+          passwordHash: "",
           profilePicture,
-          "google",
-          true,
-        ],
-        rowMode: "array",
-      })
+          provider: "google",
+          isEmailVerified: true,
+        })
+        .returning({ id: users.id })
 
-      const userId = result.rows?.[0]?.[0]
+      const userId = result[0]?.id
       token = jwt.sign({ userId }, JWT_SECRET, {
-        expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
+        expiresIn: JWT_EXPIRATION_MINUTES,
       })
 
       return {
@@ -142,40 +138,28 @@ class AuthService {
         email: email,
       }
     } catch (error) {
-      console.log("🚀 ~ AuthServices ~ singup ~ error:", error)
+      console.log("🚀 ~ AuthServices ~ findOrCreate ~ error:", error)
 
       return {
         success: false,
         message: error,
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 
   async login(email: string, password: string) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
+      const result = await db.select().from(users).where(eq(users.email, email))
 
-      // Retrieve the user by email
-      const result = await dbClient.query({
-        text: "SELECT * FROM users WHERE email = $1",
-        values: [email],
-      })
-
-      // If user not found
-      if (result.rows.length === 0) {
+      if (result.length === 0) {
         return {
           success: false,
           message: "User not found",
         }
       }
 
-      const user = result.rows[0]
+      const user = result[0]
 
-      // Compare the provided password with the stored password hash
       const isPasswordValid = await bcrypt.compare(password, user.passwordHash)
 
       if (!isPasswordValid) {
@@ -185,11 +169,9 @@ class AuthService {
         }
       }
 
-      const token = jwt.sign(
-        { userId: user.id }, // Assuming user.id is the user's unique identifier
-        JWT_SECRET,
-        { expiresIn: `${JWT_EXPIRATION_MINUTES}m` } // Token expiration
-      )
+      const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
+        expiresIn: JWT_EXPIRATION_MINUTES,
+      })
 
       return {
         success: true,
@@ -204,88 +186,97 @@ class AuthService {
         success: false,
         message: "Login failed",
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 
   async sendOTP(email: string) {
-    let dbClient
     try {
       const otp = Math.floor(100000 + Math.random() * 900000).toString()
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-      const { rows } = await dbClient.query({
-        text: "update users set otp = $1 where email = $2 returning *",
-        values: [otp, email],
-      })
+
+      const rows = await db.select().from(users).where(eq(users.email, email))
+
       if (rows.length === 0) {
         return { success: false, message: "User not found" }
       }
+
       const user = rows[0]
-      const otpExpiration = new Date(user.otpCreatedAt)
-      otpExpiration.setMinutes(
-        otpExpiration.getMinutes() +
-          parseInt(String(process.env.OTP_EXPIRATION_MINUTES))
+
+      const expiresAt = new Date()
+      expiresAt.setMinutes(
+        expiresAt.getMinutes() +
+          parseInt(String(process.env.OTP_EXPIRATION_MINUTES || 10))
       )
+
+      await db.insert(otpTransactions).values({
+        email,
+        otp,
+        context: "forgot_password",
+        expiresAt: expiresAt.toISOString(),
+      })
+
+      await sendForgotPasswordEmail({ email, otp })
       return {
         success: true,
         email: user.email,
         message: "OTP sent successfully",
         otp,
-        otpExpiration,
+        otpExpiration: expiresAt,
       }
     } catch (error) {
       console.log("🚀 ~ AuthServices ~ sendOTP ~ error:", error)
       return { success: false, message: "Failed to send OTP" }
-    } finally {
-      await dbClient?.end()
     }
   }
 
   async verifyOTP(email: string, otp: string) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-      const users = await dbClient.query({
-        text: `SELECT otp, "otpCreatedAt", "otpExpiration" FROM users WHERE email = $1`,
-        values: [email],
-      })
-      await dbClient.end()
+      const otpQuery = await db
+        .select()
+        .from(otpTransactions)
+        .where(
+          and(
+            eq(otpTransactions.email, email),
+            eq(otpTransactions.otp, otp),
+            eq(otpTransactions.isUsed, false)
+          )
+        )
+        .orderBy(desc(otpTransactions.createdAt))
+        .limit(1)
 
-      if (users.rows.length === 0) {
-        return { success: false, message: "User not found" }
-      }
-
-      const user = users.rows[0]
-
-      if (user.otp !== otp) {
+      if (otpQuery.length === 0) {
         return { success: false, message: "Invalid OTP" }
       }
 
-      if (new Date() > user.otpExpiration) {
+      const otpRecord = otpQuery[0]
+      if (new Date() > new Date(otpRecord.expiresAt)) {
         return { success: false, message: "OTP expired" }
       }
 
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-      await dbClient.query({
-        text: `update users set "isEmailVerified" = true where email = $1`,
-        values: [email],
-      })
-      await dbClient.end()
+      await db
+        .update(otpTransactions)
+        .set({ isUsed: true })
+        .where(eq(otpTransactions.id, otpRecord.id))
+
+      const updateResult = await db
+        .update(users)
+        .set({ isEmailVerified: true })
+        .where(eq(users.email, email))
+        .returning({ id: users.id })
+
+      if (updateResult.length === 0) {
+        return { success: false, message: "User not found" }
+      }
+
+      const user = updateResult[0]
 
       const token = jwt.sign({ userId: user.id }, JWT_SECRET, {
-        expiresIn: `${JWT_EXPIRATION_MINUTES}m`,
+        expiresIn: JWT_EXPIRATION_MINUTES,
       })
 
       return { success: true, message: "Email verified successfully", token }
     } catch (error) {
       console.log("🚀 ~ AuthServices ~ verifyOTP ~ error:", error)
       return { success: false, message: "Failed to verify OTP" }
-    } finally {
-      await dbClient?.end()
     }
   }
 
@@ -294,29 +285,17 @@ class AuthService {
     currentPassword: string,
     newPassword: string
   ) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-      const query = `select * from users where id = $1`
+      const result = await db.select().from(users).where(eq(users.id, userId))
 
-      const result = await dbClient.query({
-        text: query,
-        values: [userId],
-      })
-
-      if (result.rows.length === 0) {
+      if (result.length === 0) {
         return { success: false, message: "User not found" }
       }
 
-      const userPasswordHash = result.rows[0].passwordHash
-      const isLoginProviderEmail = result.rows[0].provider === "email"
+      const userPasswordHash = result[0].passwordHash
+      const isLoginProviderEmail = result[0].provider === "email"
 
-      // to update the password we make sure that the password
-      // we are getting is actually exist due to email provider
-      // if the user is using google provider
-      // then we will not check the current password
-      if (isLoginProviderEmail) {
+      if (isLoginProviderEmail && currentPassword) {
         const isPasswordValid = await bcrypt.compare(
           currentPassword,
           userPasswordHash
@@ -329,17 +308,63 @@ class AuthService {
       const saltRounds = 10
       const passwordHash = await bcrypt.hash(newPassword, saltRounds)
 
-      await dbClient.query({
-        text: `update users set "passwordHash" = $1 where id = $2`,
-        values: [passwordHash, userId],
-      })
-      await dbClient.end()
+      await db.update(users).set({ passwordHash }).where(eq(users.id, userId))
+
       return { success: true, message: "Password updated successfully" }
     } catch (error) {
       console.log("🚀 ~ AuthServices ~ updatePassword ~ error:", error)
       return { success: false, message: "Failed to update password" }
-    } finally {
-      await dbClient?.end()
+    }
+  }
+
+  // Helper method for reset password flow
+  async resetPassword(email: string, otp: string, newPassword: string) {
+    try {
+      const otpQuery = await db
+        .select()
+        .from(otpTransactions)
+        .where(
+          and(
+            eq(otpTransactions.email, email),
+            eq(otpTransactions.otp, otp),
+            eq(otpTransactions.isUsed, false),
+            eq(otpTransactions.context, "forgot_password")
+          )
+        )
+        .orderBy(desc(otpTransactions.createdAt))
+        .limit(1)
+
+      if (otpQuery.length === 0) {
+        return { success: false, message: "Invalid OTP" }
+      }
+
+      const otpRecord = otpQuery[0]
+      if (new Date() > new Date(otpRecord.expiresAt)) {
+        return { success: false, message: "OTP expired" }
+      }
+
+      await db
+        .update(otpTransactions)
+        .set({ isUsed: true })
+        .where(eq(otpTransactions.id, otpRecord.id))
+
+      const saltRounds = 10
+      const passwordHash = await bcrypt.hash(newPassword, saltRounds)
+
+      const result = await db
+        .update(users)
+        .set({ passwordHash })
+        .where(eq(users.email, email))
+        .returning({ id: users.id })
+
+      if (result.length === 0) {
+        return { success: false, message: "User not found" }
+      }
+
+      return { success: true, message: "Password reset successfully" }
+    } catch (error) {
+      console.log("🚀 ~ AuthServices ~ resetPassword ~ error:", error)
+      return { success: false, message: "Failed to reset password" }
     }
   }
 }

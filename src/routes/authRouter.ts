@@ -5,7 +5,8 @@ import {
   signinWithGoogle,
   signup,
   verifyOTP,
-  updatePassword
+  updatePassword,
+  resetPassword,
 } from "../controllers/authController"
 import authenticateJWT from "../middlewares/authenticate"
 
@@ -20,6 +21,8 @@ authRouter.post("/verify-otp", verifyOTP)
 authRouter.post("/send-otp", sendOTP)
 
 authRouter.post("/signin-with-google", signinWithGoogle)
+
+authRouter.post("/reset-password", resetPassword)
 
 authRouter.use(authenticateJWT)
 authRouter.put("/update-password", updatePassword)
