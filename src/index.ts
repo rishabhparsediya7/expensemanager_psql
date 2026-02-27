@@ -9,6 +9,7 @@ import groupRouter from "./routes/groupRouter"
 import expenseRouter from "./routes/expenseRouter"
 import chatRouter from "./routes/chatRouter"
 import splitExpenseRouter from "./routes/splitExpenseRouter"
+import notificationRouter from "./routes/notificationRouter"
 
 dotenv.config()
 
@@ -27,6 +28,7 @@ app.use("/api/group", groupRouter)
 app.use("/api/expense", expenseRouter)
 app.use("/api/chat", chatRouter)
 app.use("/api/split", splitExpenseRouter)
+app.use("/api/notifications", notificationRouter)
 
 app.get("/", async (req, res) => {
   res.status(200).json({ message: "Welcome to the Master Server" })
