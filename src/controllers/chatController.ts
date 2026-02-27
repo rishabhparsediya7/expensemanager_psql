@@ -70,20 +70,46 @@ export const sendMessage = async (req: Request, res: Response) => {
 }
 
 export const getHistory = async (req: Request, res: Response) => {
-  const { userId, withUser } = req.query
+  const { userId, withUser, limit, before } = req.query
   if (!userId || !withUser) {
     return res.status(400).json({ error: "User ID and With User are required" })
   }
+
+  const messageLimit = Math.min(Number(limit) || 50, 100)
+
   try {
     let dbClient
     dbClient = new pg.Client(config)
     await dbClient.connect()
-    const msgs = await dbClient.query({
-      text: "select * from messages where (sender_id = $1 and receiver_id = $2) or (sender_id = $2 and receiver_id = $1)",
-      values: [userId, withUser],
-    })
+
+    let query: string
+    let values: any[]
+
+    if (before) {
+      // Fetch older messages before a given timestamp (cursor-based pagination)
+      query = `SELECT * FROM messages
+        WHERE ((sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1))
+        AND sent_at < $3
+        ORDER BY sent_at DESC
+        LIMIT $4`
+      values = [userId, withUser, before, messageLimit + 1]
+    } else {
+      // Fetch the most recent messages
+      query = `SELECT * FROM messages
+        WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)
+        ORDER BY sent_at DESC
+        LIMIT $3`
+      values = [userId, withUser, messageLimit + 1]
+    }
+
+    const msgs = await dbClient.query({ text: query, values })
     await dbClient.end()
-    res.send(msgs?.rows)
+
+    // Check if there are more messages beyond the limit
+    const hasMore = msgs.rows.length > messageLimit
+    const messages = msgs.rows.slice(0, messageLimit).reverse() // Reverse to get chronological order
+
+    res.send({ messages, hasMore })
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch messages" })
   }
