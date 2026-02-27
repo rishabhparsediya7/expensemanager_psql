@@ -5,6 +5,7 @@ import { db } from "../db"
 import { friends, users, messages } from "../db/schema"
 import { and, eq, or, desc, sql } from "drizzle-orm"
 import { getIO, onlineUsers } from "../socket"
+import { sendPushNotification } from "../firebaseAdmin"
 
 export const uploadKeys = async (req: Request, res: Response) => {
   const { userId, publicKey, privateKey } = req.body
@@ -239,25 +240,34 @@ export const sendSplinkRequest = async (req: Request, res: Response) => {
       status: "pending",
     })
 
-    // 🔌 Socket notification: Notify receiver of new request
+    // 🔔 Push notification: Always notify receiver of new Splink request
+    const sender = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+    const senderName =
+      sender.length > 0
+        ? `${sender[0].firstName} ${sender[0].lastName}`
+        : "Someone"
+
+    // Socket notification if online
     const receiverSocketId = onlineUsers.get(friendId)
     if (receiverSocketId) {
-      // Fetch sender info for a better notification
-      const sender = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1)
-      const senderName =
-        sender.length > 0
-          ? `${sender[0].firstName} ${sender[0].lastName}`
-          : "Someone"
-
       getIO().to(receiverSocketId).emit("splink_request", {
         fromId: userId,
         fromName: senderName,
       })
     }
+
+    // Push notification (always, even if online)
+    sendPushNotification(
+      friendId,
+      "New Friend Request",
+      `${senderName} sent you a Splink request`,
+      { senderId: userId, type: "splink_request" },
+      "splink_request"
+    )
 
     res.status(200).json({ success: true, message: "Splink request sent" })
   } catch (err) {
@@ -314,6 +324,29 @@ export const respondToSplinkRequest = async (req: Request, res: Response) => {
         action,
       })
     }
+
+    // 🔔 Push notification: Notify original sender of response
+    const responder = await db
+      .select()
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1)
+    const responderName =
+      responder.length > 0
+        ? `${responder[0].firstName} ${responder[0].lastName}`
+        : "Someone"
+
+    sendPushNotification(
+      friendId,
+      action === "accept"
+        ? "Friend Request Accepted"
+        : "Friend Request Declined",
+      action === "accept"
+        ? `${responderName} accepted your Splink request`
+        : `${responderName} declined your Splink request`,
+      { senderId: userId, type: "splink_response", action },
+      "splink_response"
+    )
 
     res.status(200).json({
       success: true,

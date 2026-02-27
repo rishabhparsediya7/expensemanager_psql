@@ -2,6 +2,7 @@
 import { Server, Socket } from "socket.io"
 import config from "./database"
 import pg from "pg"
+import { sendPushNotification } from "./firebaseAdmin"
 
 let io: Server
 export const onlineUsers = new Map<string, string>()
@@ -72,7 +73,29 @@ export function initSocket(server: any) {
             })
             console.log(`📤 Message sent to ${receiverId}`)
           } else {
-            console.log(`📴 Receiver ${receiverId} is offline`)
+            console.log(
+              `📴 Receiver ${receiverId} is offline, sending push notification`
+            )
+            // Get sender name for the notification
+            const senderClient = new pg.Client(config)
+            await senderClient.connect()
+            const senderResult = await senderClient.query(
+              `SELECT "firstName", "lastName" FROM users WHERE id = $1`,
+              [senderId]
+            )
+            await senderClient.end()
+
+            const senderName = senderResult.rows[0]
+              ? `${senderResult.rows[0].firstName} ${senderResult.rows[0].lastName}`
+              : "Someone"
+
+            sendPushNotification(
+              receiverId,
+              `${senderName}`,
+              "Sent you a message",
+              { senderId, type: "chat_message" },
+              "chat_message"
+            )
           }
         } catch (err) {
           console.error("❌ send-message failed:", (err as Error).message)

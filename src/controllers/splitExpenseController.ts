@@ -1,6 +1,7 @@
 import { Request, Response } from "express"
 import { body, param, validationResult } from "express-validator"
 import SplitExpenseService from "../services/splitExpenseService"
+import { sendPushNotification } from "../firebaseAdmin"
 
 // Validation middleware
 export const createSplitExpenseValidation = [
@@ -58,6 +59,20 @@ export const createSplitExpense = async (req: Request, res: Response) => {
     })
 
     if (result.success) {
+      // 🔔 Notify all participants except the creator
+      if (participants && Array.isArray(participants)) {
+        for (const participant of participants) {
+          if (participant.userId !== createdBy) {
+            sendPushNotification(
+              participant.userId,
+              "New Split Expense",
+              `You've been added to a split expense: ${description} (₹${totalAmount})`,
+              { type: "split_expense", splitExpenseId: result.data?.id || "" },
+              "split_expense"
+            )
+          }
+        }
+      }
       return res.status(201).json(result)
     } else {
       return res.status(400).json(result)
@@ -163,6 +178,14 @@ export const settleUp = async (req: Request, res: Response) => {
     })
 
     if (result.success) {
+      // 🔔 Notify the payee about the settlement
+      sendPushNotification(
+        payeeId,
+        "Payment Received",
+        `You received a payment of ₹${amount}${note ? `: ${note}` : ""}`,
+        { type: "settlement", splitExpenseId, payerId },
+        "settlement"
+      )
       return res.status(200).json(result)
     } else {
       return res.status(400).json(result)
