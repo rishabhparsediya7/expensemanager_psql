@@ -408,3 +408,43 @@ export const otpTransactions = pgTable("otpTransactions", {
     .defaultNow()
     .notNull(),
 })
+
+export const deviceTokens = pgTable(
+  "deviceTokens",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    userId: uuid().notNull(),
+    token: text().notNull(),
+    platform: varchar({ length: 20 }).notNull(), // ios, android
+    createdAt: timestamp({ withTimezone: true, mode: "string" }).defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [users.id],
+      name: "deviceTokens_userId_fkey",
+    }).onDelete("cascade"),
+    unique("deviceTokens_userId_token_key").on(table.userId, table.token),
+  ]
+)
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    userId: uuid().notNull(),
+    title: text().notNull(),
+    body: text().notNull(),
+    data: text(), // JSON string
+    type: varchar({ length: 50 }),
+    isRead: boolean().default(false).notNull(),
+    createdAt: timestamp({ withTimezone: true, mode: "string" }).defaultNow(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [users.id],
+      name: "notifications_userId_fkey",
+    }).onDelete("cascade"),
+  ]
+)

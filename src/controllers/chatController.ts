@@ -1,69 +1,80 @@
-import pg from "pg"
 import { Request, Response } from "express"
-import config from "../database"
 import { db } from "../db"
-import { friends, users, messages } from "../db/schema"
+import {
+  friends,
+  users,
+  messages,
+  userKeys,
+  userPassphrases,
+} from "../db/schema"
 import { and, eq, or, desc, sql } from "drizzle-orm"
 import { getIO, onlineUsers } from "../socket"
 import { sendPushNotification } from "../firebaseAdmin"
 
 export const uploadKeys = async (req: Request, res: Response) => {
   const { userId, publicKey, privateKey } = req.body
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
-    await dbClient.query({
-      text: `insert into "userKeys" ("publicKey", "encryptedPrivateKey", "userId") values ($1, $2, $3) on conflict ("userId") do update set "publicKey" = $1, "encryptedPrivateKey" = $2, "updatedAt" = now()`,
-      values: [publicKey, privateKey, userId],
-    })
-    await dbClient.end()
+    await db
+      .insert(userKeys)
+      .values({
+        userId,
+        publicKey,
+        encryptedPrivateKey: privateKey,
+      })
+      .onConflictDoUpdate({
+        target: [userKeys.userId],
+        set: {
+          publicKey,
+          encryptedPrivateKey: privateKey,
+          updatedAt: new Date().toISOString(),
+        },
+      })
     res.send({ success: true })
   } catch (err) {
     console.log("🚀 ~ uploadKeys ~ err:", err)
     res.status(500).json({ error: "Failed to store public key" })
-  } finally {
-    await dbClient?.end()
   }
 }
 
 export const getUserKeys = async (req: Request, res: Response) => {
   const { userId } = req.params
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
-    const row = await dbClient.query({
-      text: `select "publicKey", "encryptedPrivateKey", "userPassphrases"."cipherText", "userPassphrases"."iv" from "userKeys" left join "userPassphrases" on "userKeys"."userId" = "userPassphrases"."userId" where "userKeys"."userId" = $1`,
-      values: [userId],
-    })
-    await dbClient.end()
-    if (!row?.rows?.[0]) return res.status(404).json({ error: "Key not found" })
+    const result = await db
+      .select({
+        publicKey: userKeys.publicKey,
+        encryptedPrivateKey: userKeys.encryptedPrivateKey,
+        cipherText: userPassphrases.cipherText,
+        iv: userPassphrases.iv,
+      })
+      .from(userKeys)
+      .leftJoin(userPassphrases, eq(userKeys.userId, userPassphrases.userId))
+      .where(eq(userKeys.userId, userId))
+      .limit(1)
+
+    if (result.length === 0)
+      return res.status(404).json({ error: "Key not found" })
+
     res.status(200).send({
-      publicKey: row?.rows?.[0]?.publicKey,
-      encryptedPrivateKey: row?.rows?.[0]?.encryptedPrivateKey,
-      cipherText: row?.rows?.[0]?.cipherText,
-      iv: row?.rows?.[0]?.iv,
+      publicKey: result[0].publicKey,
+      encryptedPrivateKey: result[0].encryptedPrivateKey,
+      cipherText: result[0].cipherText,
+      iv: result[0].iv,
     })
   } catch (err) {
     console.log("🚀 ~ getUserKeys ~ err:", err)
     res.status(500).json({ error: "Error fetching public key" })
-  } finally {
-    await dbClient?.end()
   }
 }
 
 export const sendMessage = async (req: Request, res: Response) => {
   const { senderId, receiverId, message, nonce } = req.body
   try {
-    let dbClient
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
-    await dbClient.query({
-      text: "insert into messages (sender_id, receiver_id, message, nonce) values ($1, $2, $3, $4)",
-      values: [senderId, receiverId, message, nonce],
+    await db.insert(messages).values({
+      senderId,
+      receiverId,
+      message,
+      nonce,
     })
-    await dbClient.end()
     res.send({ success: true })
   } catch (err) {
     res.status(500).json({ error: "Failed to store message" })
@@ -79,39 +90,34 @@ export const getHistory = async (req: Request, res: Response) => {
   const messageLimit = Math.min(Number(limit) || 50, 100)
 
   try {
-    let dbClient
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
+    const whereClause = and(
+      or(
+        and(
+          eq(messages.senderId, userId as string),
+          eq(messages.receiverId, withUser as string)
+        ),
+        and(
+          eq(messages.senderId, withUser as string),
+          eq(messages.receiverId, userId as string)
+        )
+      ),
+      before ? sql`${messages.sentAt} < ${before}` : undefined
+    )
 
-    let query: string
-    let values: any[]
-
-    if (before) {
-      // Fetch older messages before a given timestamp (cursor-based pagination)
-      query = `SELECT * FROM messages
-        WHERE ((sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1))
-        AND sent_at < $3
-        ORDER BY sent_at DESC
-        LIMIT $4`
-      values = [userId, withUser, before, messageLimit + 1]
-    } else {
-      // Fetch the most recent messages
-      query = `SELECT * FROM messages
-        WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)
-        ORDER BY sent_at DESC
-        LIMIT $3`
-      values = [userId, withUser, messageLimit + 1]
-    }
-
-    const msgs = await dbClient.query({ text: query, values })
-    await dbClient.end()
+    const msgs = await db
+      .select()
+      .from(messages)
+      .where(whereClause)
+      .orderBy(desc(messages.sentAt))
+      .limit(messageLimit + 1)
 
     // Check if there are more messages beyond the limit
-    const hasMore = msgs.rows.length > messageLimit
-    const messages = msgs.rows.slice(0, messageLimit).reverse() // Reverse to get chronological order
+    const hasMore = msgs.length > messageLimit
+    const resultMessages = msgs.slice(0, messageLimit).reverse() // Reverse to get chronological order
 
-    res.send({ messages, hasMore })
+    res.send({ messages: resultMessages, hasMore })
   } catch (err) {
+    console.error("Error fetching history:", err)
     res.status(500).json({ error: "Failed to fetch messages" })
   }
 }
@@ -119,11 +125,11 @@ export const getHistory = async (req: Request, res: Response) => {
 export const getFriends = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
-    const dbClient = new pg.Client(config)
-    await dbClient.connect()
 
-    const friends = await dbClient.query({
-      text: `
+    // Using a lateral join equivalent in Drizzle can be tricky,
+    // so we'll use a subquery or a raw SQL for the complex part if needed.
+    // However, we can also use Drizzle's execute for the original complex query to be safe and efficient.
+    const result = await db.execute(sql`
           SELECT
             u.id AS "friendId",
             u."firstName",
@@ -144,15 +150,11 @@ export const getFriends = async (req: Request, res: Response) => {
             ORDER BY sent_at DESC
             LIMIT 1
           ) m ON TRUE
-          WHERE f.user_id = $1 AND f.status = 'accepted'
+          WHERE f.user_id = ${userId} AND f.status = 'accepted'
           ORDER BY m.sent_at DESC NULLS LAST;
-        `,
-      values: [userId],
-    })
+    `)
 
-    await dbClient.end()
-
-    res.send(friends.rows)
+    res.send(result.rows)
   } catch (err) {
     console.error("❌ Error fetching friends:", err)
     res.status(500).json({ error: "Failed to fetch friends" })
@@ -161,50 +163,44 @@ export const getFriends = async (req: Request, res: Response) => {
 
 export const uploadPassphrase = async (req: Request, res: Response) => {
   const { userId, cipherText, iv } = req.body
-  console.log(
-    "🚀 ~ uploadPassphrase ~ userId, cypherText, iv:",
-    userId,
-    cipherText,
-    iv
-  )
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
-    await dbClient.query({
-      text: `insert into "userPassphrases" ("cipherText", "iv", "userId") values ($1, $2, $3) on conflict ("userId") do update set "cipherText" = $1, "iv" = $2, "updatedAt" = now()`,
-      values: [cipherText, iv, userId],
-    })
-    await dbClient.end()
+    await db
+      .insert(userPassphrases)
+      .values({
+        userId,
+        cipherText,
+        iv,
+      })
+      .onConflictDoUpdate({
+        target: [userPassphrases.userId],
+        set: { cipherText, iv, updatedAt: new Date().toISOString() },
+      })
     res.status(200).json({ success: true })
   } catch (err) {
     console.log("🚀 ~ uploadPassphrase ~ err:", err)
     res.status(500).json({ error: "Failed to store passphrase" })
-  } finally {
-    await dbClient?.end()
   }
 }
 
 export const getPassphrase = async (req: Request, res: Response) => {
   const { userId } = req.params
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
-    const row = await dbClient.query({
-      text: `select "cypherText", "iv" from "userPassphrases" where "userId" = $1`,
-      values: [userId],
-    })
-    if (!row?.rows?.[0])
+    const result = await db
+      .select({
+        cipherText: userPassphrases.cipherText,
+        iv: userPassphrases.iv,
+      })
+      .from(userPassphrases)
+      .where(eq(userPassphrases.userId, userId))
+      .limit(1)
+
+    if (result.length === 0)
       return res.status(404).json({ error: "Passphrase not found" })
-    res
-      .status(200)
-      .json({ cypherText: row?.rows?.[0]?.cypherText, iv: row?.rows?.[0]?.iv })
+
+    res.status(200).json({ cypherText: result[0].cipherText, iv: result[0].iv })
   } catch (err) {
     console.log("🚀 ~ getPassphrase ~ err:", err)
     res.status(500).json({ error: "Error fetching passphrase" })
-  } finally {
-    await dbClient?.end()
   }
 }
 

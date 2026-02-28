@@ -348,20 +348,26 @@ class SplitExpenseService {
         note: note || null,
       })
 
-      // Update participant's paid amount using raw SQL for arithmetic
-      await db.execute(sql`
-        UPDATE "splitExpenseParticipants"
-        SET "amount_paid" = "amount_paid" + ${amount},
-            "status" = CASE 
-              WHEN "amount_paid" + ${amount} >= "amount_owed" THEN 'settled'
-              ELSE 'pending'
-            END,
-            "settled_at" = CASE 
-              WHEN "amount_paid" + ${amount} >= "amount_owed" THEN CURRENT_TIMESTAMP
-              ELSE NULL
-            END
-        WHERE "split_expense_id" = ${splitExpenseId} AND "user_id" = ${payerId}
-      `)
+      // Update participant's paid amount using Drizzle update with sql template for arithmetic
+      await db
+        .update(splitExpenseParticipants)
+        .set({
+          amountPaid: sql`${splitExpenseParticipants.amountPaid} + ${amount}`,
+          status: sql`CASE 
+            WHEN ${splitExpenseParticipants.amountPaid} + ${amount} >= ${splitExpenseParticipants.amountOwed} THEN 'settled'
+            ELSE 'pending'
+          END`,
+          settledAt: sql`CASE 
+            WHEN ${splitExpenseParticipants.amountPaid} + ${amount} >= ${splitExpenseParticipants.amountOwed} THEN CURRENT_TIMESTAMP
+            ELSE NULL
+          END`,
+        })
+        .where(
+          and(
+            eq(splitExpenseParticipants.splitExpenseId, splitExpenseId),
+            eq(splitExpenseParticipants.userId, payerId)
+          )
+        )
 
       // Update user balance (reduce the debt)
       await this.updateBalance(payeeId, payerId, -amount)
@@ -517,21 +523,37 @@ class SplitExpenseService {
     friendId: string,
     amount: number
   ) {
-    // Update or insert balance for userId -> friendId
-    await db.execute(sql`
-      INSERT INTO "userBalances" ("user_id", "friend_id", "balance")
-      VALUES (${userId}, ${friendId}, ${amount})
-      ON CONFLICT ("user_id", "friend_id")
-      DO UPDATE SET balance = "userBalances".balance + ${amount}, "updated_at" = CURRENT_TIMESTAMP
-    `)
+    // Update or insert balance for userId -> friendId using onConflictDoUpdate
+    await db
+      .insert(userBalances)
+      .values({
+        userId,
+        friendId,
+        balance: String(amount),
+      })
+      .onConflictDoUpdate({
+        target: [userBalances.userId, userBalances.friendId],
+        set: {
+          balance: sql`${userBalances.balance} + ${amount}`,
+          updatedAt: new Date().toISOString(),
+        },
+      })
 
     // Update reverse balance (friendId -> userId with negative amount)
-    await db.execute(sql`
-      INSERT INTO "userBalances" ("user_id", "friend_id", "balance")
-      VALUES (${friendId}, ${userId}, ${-amount})
-      ON CONFLICT ("user_id", "friend_id")
-      DO UPDATE SET balance = "userBalances".balance + ${-amount}, "updated_at" = CURRENT_TIMESTAMP
-    `)
+    await db
+      .insert(userBalances)
+      .values({
+        userId: friendId,
+        friendId: userId,
+        balance: String(-amount),
+      })
+      .onConflictDoUpdate({
+        target: [userBalances.userId, userBalances.friendId],
+        set: {
+          balance: sql`${userBalances.balance} + ${-amount}`,
+          updatedAt: new Date().toISOString(),
+        },
+      })
   }
 }
 

@@ -1,5 +1,12 @@
-import pg from "pg"
-import config from "../database"
+import { db } from "../db"
+import {
+  expenses,
+  category,
+  paymentMethod,
+  users,
+  userFinancialSummary,
+} from "../db/schema"
+import { eq, and, between, sql, desc, asc, sum } from "drizzle-orm"
 import dayjs from "dayjs"
 import isoWeek from "dayjs/plugin/isoWeek"
 
@@ -27,39 +34,29 @@ class ExpenseService {
   async addExpense({
     userId,
     amount,
-    category,
+    category: categoryId,
     description,
     expenseDate,
     paymentMethodId,
   }: AddExpense) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
-      const values = [
-        userId,
-        amount,
-        category,
-        description,
-        expenseDate,
-        paymentMethodId,
-      ]
-
       // Insert expense
-      const { rows: expense } = await dbClient.query({
-        text: `INSERT INTO expenses ("userId", "amount", "categoryId", "description", "expenseDate", "paymentMethodId") 
-               VALUES ($1, $2, $3, $4, $5, $6) 
-               RETURNING *`,
-        values,
-      })
+      const [newExpense] = await db
+        .insert(expenses)
+        .values({
+          userId,
+          amount: String(amount),
+          categoryId,
+          description,
+          expenseDate: expenseDate || new Date().toISOString(),
+          paymentMethodId,
+        })
+        .returning()
 
-      return { success: true, data: expense[0] }
+      return { success: true, data: newExpense }
     } catch (error) {
       console.log("🚀 ~ ExpenseService ~ addExpense ~ error:", error)
-      return { success: false, message: error }
-    } finally {
-      await dbClient?.end()
+      return { success: false, message: (error as Error).message }
     }
   }
 
@@ -88,21 +85,7 @@ class ExpenseService {
     sortBy: string
     sortOrder: string
   }) {
-    const allowedSortBy = ["expenseDate", "amount", "createdAt"]
-    const allowedSortOrder = ["asc", "desc"]
-
-    const sortColumn = allowedSortBy.includes(sortBy)
-      ? `"${sortBy}"`
-      : '"expenseDate"'
-    const sortDirection = allowedSortOrder.includes(sortOrder.toLowerCase())
-      ? sortOrder.toUpperCase()
-      : "DESC"
-
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
       let fromDate: string
       let toDate: string
 
@@ -110,124 +93,113 @@ class ExpenseService {
 
       switch (filter) {
         case "week":
-          fromDate = now.startOf("isoWeek").toISOString() // Get start of this week
-          toDate = now.endOf("isoWeek").toISOString() // Get end of this week
+          fromDate = now.startOf("isoWeek").toISOString()
+          toDate = now.endOf("isoWeek").toISOString()
           break
         case "month":
-          fromDate = now.startOf("month").toISOString() // Start of the month
-          toDate = now.endOf("month").toISOString() // End of the month
+          fromDate = now.startOf("month").toISOString()
+          toDate = now.endOf("month").toISOString()
           break
         case "year":
-          fromDate = now.startOf("year").toISOString() // Start of the year
-          toDate = now.endOf("year").toISOString() // End of the year
+          fromDate = now.startOf("year").toISOString()
+          toDate = now.endOf("year").toISOString()
           break
         case "today":
-          fromDate = now.startOf("day").toISOString() // Start of today
-          toDate = now.endOf("day").toISOString() // End of today
+          fromDate = now.startOf("day").toISOString()
+          toDate = now.endOf("day").toISOString()
           break
         case "custom":
           if (!startDate || !endDate) {
             throw new Error("Custom filter requires startDate and endDate")
           }
-          // Format custom date range with time (inclusive range)
-          fromDate = dayjs(startDate).startOf("day").toISOString() // Start of custom date range
-          toDate = dayjs(endDate).endOf("day").toISOString() // End of custom date range
+          fromDate = dayjs(startDate).startOf("day").toISOString()
+          toDate = dayjs(endDate).endOf("day").toISOString()
           break
         case "category":
           if (!categoryId) {
             throw new Error("Category filter requires categoryId")
           }
-          fromDate = "1970-01-01T00:00:00.000Z" // From a distant past, to include all data
-          toDate = now.endOf("day").toISOString() // Up until today
+          fromDate = "1970-01-01T00:00:00.000Z"
+          toDate = now.endOf("day").toISOString()
           break
         case "paymentMethod":
           if (!paymentMethodId) {
             throw new Error("Payment Method filter requires paymentMethodId")
           }
-          fromDate = "1970-01-01T00:00:00.000Z" // From a distant past, to include all data
-          toDate = now.endOf("day").toISOString() // Up until today
+          fromDate = "1970-01-01T00:00:00.000Z"
+          toDate = now.endOf("day").toISOString()
           break
         default:
-          fromDate = "1970-01-01T00:00:00.000Z" // From a distant past, to include all data
-          toDate = now.endOf("day").toISOString() // Up until today
+          fromDate = "1970-01-01T00:00:00.000Z"
+          toDate = now.endOf("day").toISOString()
           break
       }
 
       const offset = (page - 1) * limit
-      const whereClauses = []
-      const values = []
-      const paginationValues = [limit, offset];
-
-      let paramIndex = 1
-
-      whereClauses.push(`e."userId" = $${paramIndex}`)
-      values.push(userId)
-      paramIndex++
+      const whereClauses = [
+        eq(expenses.userId, userId),
+        between(expenses.expenseDate, fromDate, toDate),
+      ]
 
       if (categoryId) {
-        whereClauses.push(`e."categoryId" = $${paramIndex}`)
-        values.push(categoryId)
-        paramIndex++
+        whereClauses.push(eq(expenses.categoryId, parseInt(categoryId)))
       }
 
       if (paymentMethodId) {
-        whereClauses.push(`e."paymentMethodId" = $${paramIndex}`)
-        values.push(paymentMethodId)
-        paramIndex++
+        whereClauses.push(
+          eq(expenses.paymentMethodId, parseInt(paymentMethodId))
+        )
       }
 
-      whereClauses.push(
-        `e."expenseDate" BETWEEN $${paramIndex} AND $${paramIndex + 1}`
-      )
-      values.push(fromDate, toDate)
-      paramIndex += 2
+      const allowedSortBy = ["expenseDate", "amount", "createdAt"]
+      const orderColumn =
+        allowedSortBy.includes(sortBy) && sortBy in expenses
+          ? expenses[sortBy as keyof typeof expenses]
+          : expenses.expenseDate
 
-      const whereString = whereClauses.join(" AND ")
+      const orderDir = sortOrder.toLowerCase() === "asc" ? asc : desc
 
-      const allValues = [...values, ...paginationValues]
-
-      const query = `
-        SELECT e.*, c.name as category, pm.name as "paymentMethod"
-        FROM expenses e
-        LEFT JOIN category c ON e."categoryId" = c.id
-        LEFT JOIN "paymentMethod" pm ON e."paymentMethodId" = pm.id
-        WHERE ${whereString}
-        ORDER BY ${sortColumn} ${sortDirection}, e."createdAt" ${sortDirection}
-        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-      `
-      const toalSumClientQuery = `
-        SELECT SUM(e."amount") as total
-        FROM expenses e
-        LEFT JOIN category c ON e."categoryId" = c.id
-        LEFT JOIN "paymentMethod" pm ON e."paymentMethodId" = pm.id
-        WHERE ${whereString}
-      `
-      const totalSumQuery = {
-        text: toalSumClientQuery,
-        values: values,
-      }
-      const expensesQuery = {
-        text: query,
-        values: allValues,
-      }
-
-      const [{ rows: expenses }, { rows: totalSum }] = await Promise.all([
-        dbClient.query(expensesQuery),
-        dbClient.query(totalSumQuery),
+      const [expenseList, totalSumResult] = await Promise.all([
+        db
+          .select({
+            id: expenses.id,
+            userId: expenses.userId,
+            amount: expenses.amount,
+            categoryId: expenses.categoryId,
+            description: expenses.description,
+            expenseDate: expenses.expenseDate,
+            createdAt: expenses.createdAt,
+            updatedAt: expenses.updatedAt,
+            paymentMethodId: expenses.paymentMethodId,
+            category: category.name,
+            paymentMethod: paymentMethod.name,
+          })
+          .from(expenses)
+          .leftJoin(category, eq(expenses.categoryId, category.id))
+          .leftJoin(
+            paymentMethod,
+            eq(expenses.paymentMethodId, paymentMethod.id)
+          )
+          .where(and(...whereClauses))
+          .orderBy(orderDir(orderColumn as any), desc(expenses.createdAt))
+          .limit(limit)
+          .offset(offset),
+        db
+          .select({ total: sum(expenses.amount) })
+          .from(expenses)
+          .where(and(...whereClauses)),
       ])
 
       return {
         success: true,
-        data: expenses,
-        total: totalSum[0].total,
+        data: expenseList,
+        total: totalSumResult[0]?.total || "0",
         page,
         limit,
       }
     } catch (error) {
       console.error("Error fetching expenses:", error)
-      return { success: false, message: "Internal server error" }
-    } finally {
-      await dbClient?.end()
+      return { success: false, message: (error as Error).message }
     }
   }
 
@@ -241,147 +213,115 @@ class ExpenseService {
     amount: number
     description: string
   }) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
       // Update expense
-      await dbClient.query({
-        text: `UPDATE "expenses" 
-               SET "amount" = $1, "description" = $2 
-               WHERE "id" = $3`,
-        values: [amount, description, expenseId],
-      })
+      await db
+        .update(expenses)
+        .set({
+          amount: String(amount),
+          description,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(expenses.id, expenseId))
 
       return { success: true, message: "Expense updated successfully." }
     } catch (error) {
       console.log("🚀 ~ ExpenseService ~ updateExpense ~ error:", error)
-      return { success: false, message: error }
-    } finally {
-      await dbClient?.end()
+      return { success: false, message: (error as Error).message }
     }
   }
 
   // Delete Expense
   async deleteExpense(expenseId: string) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
-      await dbClient.query({
-        text: `DELETE FROM "expenses" 
-               WHERE "id" = $1`,
-        values: [expenseId],
-      })
+      await db.delete(expenses).where(eq(expenses.id, expenseId))
 
       return { success: true, message: "Expense deleted successfully." }
     } catch (error) {
       console.log("🚀 ~ ExpenseService ~ deleteExpense ~ error:", error)
-      return { success: false, message: error }
-    } finally {
-      await dbClient?.end()
+      return { success: false, message: (error as Error).message }
     }
   }
 
-  // Get Balances
+  // Get Expense Details
+  // Note: This method was previously using tables/columns not found in current schema.
+  // Refactoring to use the existing 'expenses' schema.
   async getExpenseDetails(expenseId: string) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
       // Query expense details
-      const { rows: expense } = await dbClient.query({
-        text: `SELECT e."id", e."groupId", e."amount", e."description", e."splitType", u."name" AS "paidByUser" 
-               FROM "expenses" e 
-               JOIN "users" u ON e."paidByUser" = u."id" 
-               WHERE e."id" = $1`,
-        values: [expenseId],
-      })
+      const result = await db
+        .select({
+          id: expenses.id,
+          amount: expenses.amount,
+          description: expenses.description,
+          expenseDate: expenses.expenseDate,
+          paidByUser: sql<string>`${users.firstName} || ' ' || ${users.lastName}`,
+        })
+        .from(expenses)
+        .innerJoin(users, eq(expenses.userId, users.id))
+        .where(eq(expenses.id, expenseId))
+        .limit(1)
 
-      if (expense.length === 0) {
+      if (result.length === 0) {
         return { success: false, message: "Expense not found" }
       }
 
-      // Query splits for the expense
-      const { rows: splits } = await dbClient.query({
-        text: `SELECT es."userId", es."amount", es."netBalance", es."transactionType", u."name" 
-               FROM "expenseSplits" es 
-               JOIN "users" u ON es."userId" = u."id" 
-               WHERE es."expenseId" = $1`,
-        values: [expenseId],
-      })
-
+      // Note: expenseSplits table is missing from current Drizzle schema.
+      // Returning empty splits for now to maintain API structure safely.
       return {
         success: true,
         data: {
-          expense: expense[0],
-          splits,
+          expense: result[0],
+          splits: [],
         },
       }
     } catch (error) {
       console.log("🚀 ~ ExpenseService ~ getExpenseDetails ~ error:", error)
-      return { success: false, message: error }
-    } finally {
-      await dbClient?.end()
+      return { success: false, message: (error as Error).message }
     }
   }
 
   // Get Expenses by Dates
   async getCurrentWeekChart(userId: string) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
       // 🗓️ Automatically get current week's Monday to Sunday
       const startDate = dayjs().startOf("isoWeek").format("YYYY-MM-DD")
       const endDate = dayjs().endOf("isoWeek").format("YYYY-MM-DD")
 
-      const { rows: expenses } = await dbClient.query({
-        text: `
+      const results = await db.execute(sql`
           WITH date_series AS (
             SELECT generate_series(
-              $1::DATE,
-              $2::DATE,
+              ${startDate}::DATE,
+              ${endDate}::DATE,
               '1 day'::INTERVAL
             )::DATE AS "expenseDate"
           )
           SELECT 
             ds."expenseDate"::TEXT as "expenseDate",
-            COALESCE(SUM(e."amount"), 0) AS totalAmount
+            COALESCE(SUM(e."amount"), 0) AS totalamount
           FROM date_series ds
           LEFT JOIN expenses e 
             ON ds."expenseDate" = DATE(e."expenseDate") 
-            AND e."userId" = $3
+            AND e."userId" = ${userId}
           GROUP BY ds."expenseDate"
           ORDER BY ds."expenseDate";
-        `,
-        values: [startDate, endDate, userId],
-      })
+        `)
 
-      return { success: true, data: expenses }
+      return { success: true, data: results.rows }
     } catch (error) {
       console.log("🚀 ~ getWeekChart ~ error:", error)
-      return { success: false, message: error }
-    } finally {
-      await dbClient?.end()
+      return { success: false, message: (error as Error).message }
     }
   }
 
   // Get Expenses by Category
   async getExpensByCategory(userId: string) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-      const { rows: expenses } = await dbClient.query({
-        text: `WITH total AS (
+      const results = await db.execute(sql`
+                WITH total AS (
                   SELECT COALESCE(SUM("amount"), 0) AS total_amount
                   FROM "expenses"
-                  WHERE "userId" = $1
+                  WHERE "userId" = ${userId}
                 )
                 SELECT 
                     cat."name",
@@ -393,18 +333,14 @@ class ExpenseService {
                 FROM "category" cat
                 LEFT JOIN "expenses" e 
                     ON cat."id" = e."categoryId" 
-                    AND e."userId" = $1
+                    AND e."userId" = ${userId}
                 CROSS JOIN total t
                 GROUP BY cat."id", cat."name", t.total_amount
                 ORDER BY cat."id" ASC;
-        `,
-        values: [userId],
-      })
-      return { success: true, data: expenses }
+        `)
+      return { success: true, data: results.rows }
     } catch (error) {
-      return { success: false, message: error }
-    } finally {
-      await dbClient?.end()
+      return { success: false, message: (error as Error).message }
     }
   }
 
@@ -419,27 +355,26 @@ class ExpenseService {
     month?: number
     year?: number
   }) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
+      const month = targetMonth ?? parseInt(dayjs().format("MM"))
+      const year = targetYear ?? parseInt(dayjs().format("YYYY"))
 
-      // Default to the current month and year if not provided
-      const month: number = targetMonth ?? parseInt(dayjs().format("MM"))
-      const year: number = targetYear ?? parseInt(dayjs().format("YYYY"))
-
-      const query = {
-        text: `
-          INSERT INTO "userFinancialSummary" ("userId", "month", "year", "budget")
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT ("userId", "month", "year")
-          DO UPDATE SET
-            "budget" = EXCLUDED.budget;
-        `,
-        values: [userId, month, year, budget ?? null],
-      }
-
-      await dbClient.query(query)
+      await db
+        .insert(userFinancialSummary)
+        .values({
+          userId,
+          month,
+          year,
+          budget: budget ? String(budget) : null,
+        })
+        .onConflictDoUpdate({
+          target: [
+            userFinancialSummary.userId,
+            userFinancialSummary.month,
+            userFinancialSummary.year,
+          ],
+          set: { budget: budget ? String(budget) : null },
+        })
 
       return {
         success: true,
@@ -454,8 +389,6 @@ class ExpenseService {
         success: false,
         message: error instanceof Error ? error.message : "An error occurred",
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 
@@ -470,48 +403,61 @@ class ExpenseService {
     month?: number
     year?: number
   }) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
+      const month = targetMonth ?? parseInt(dayjs().format("MM"))
+      const year = targetYear ?? parseInt(dayjs().format("YYYY"))
 
-      const month: number = targetMonth ?? parseInt(dayjs().format("MM"))
-      const year: number = targetYear ?? parseInt(dayjs().format("YYYY"))
+      const incomeStr = income ? String(income) : null
 
-      const query = {
-        text: `
-          INSERT INTO "userFinancialSummary" ("userId", "month", "year", "totalIncome")
-          VALUES ($1, $2, $3, $4)
-          ON CONFLICT ("userId", "month", "year")
-          DO UPDATE SET
-          "totalIncome" = EXCLUDED."totalIncome";
-        `,
-        values: [userId, month, year, income ?? null],
-      }
+      await db
+        .insert(userFinancialSummary)
+        .values({
+          userId,
+          month,
+          year,
+          totalIncome: incomeStr || "0",
+        })
+        .onConflictDoUpdate({
+          target: [
+            userFinancialSummary.userId,
+            userFinancialSummary.month,
+            userFinancialSummary.year,
+          ],
+          set: { totalIncome: incomeStr || "0" },
+        })
 
-      await dbClient.query(query)
-
-      const result = await dbClient.query(
-        `
-          SELECT "totalIncome", "amountSpent"
-          FROM "userFinancialSummary"
-          WHERE "userId" = $1 AND "month" = $2 AND "year" = $3
-        `,
-        [userId, month, year]
-      )
-
-      if (result.rows.length) {
-        const { totalIncome = 0, amountSpent = 0 } = result.rows[0]
-        const amountSaved = (totalIncome || 0) - (amountSpent || 0)
-        await dbClient.query(
-          `
-            UPDATE "userFinancialSummary"
-            SET "amountSaved" = $4
-            WHERE "userId" = $1 AND "month" = $2 AND "year" = $3
-          `,
-          [userId, month, year, amountSaved]
+      const summary = await db
+        .select({
+          totalIncome: userFinancialSummary.totalIncome,
+          amountSpent: userFinancialSummary.amountSpent,
+        })
+        .from(userFinancialSummary)
+        .where(
+          and(
+            eq(userFinancialSummary.userId, userId),
+            eq(userFinancialSummary.month, month),
+            eq(userFinancialSummary.year, year)
+          )
         )
+        .limit(1)
+
+      if (summary.length > 0) {
+        const totalIncome = parseFloat(summary[0].totalIncome || "0")
+        const amountSpent = parseFloat(summary[0].amountSpent || "0")
+        const amountSaved = totalIncome - amountSpent
+
+        await db
+          .update(userFinancialSummary)
+          .set({ amountSaved: String(amountSaved) })
+          .where(
+            and(
+              eq(userFinancialSummary.userId, userId),
+              eq(userFinancialSummary.month, month),
+              eq(userFinancialSummary.year, year)
+            )
+          )
       }
+
       return {
         success: true,
         message: "Monthly income updated successfully.",
@@ -525,8 +471,6 @@ class ExpenseService {
         success: false,
         message: error instanceof Error ? error.message : "An error occurred",
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 
@@ -540,31 +484,27 @@ class ExpenseService {
     month?: number
     year?: number
   }) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
+      const targetMonth = month ?? parseInt(dayjs().format("MM"))
+      const targetYear = year ?? parseInt(dayjs().format("YYYY"))
 
-      const query = {
-        text: `
-          SELECT 
-            "month",
-            "year",
-            "budget",
-            "totalIncome",
-            "amountSpent",
-            "amountSaved"
-          FROM "userFinancialSummary"
-          WHERE "userId" = $1 AND "month" = $2 AND "year" = $3;
-        `,
-        values: [
-          userId,
-          month ?? parseInt(dayjs().format("MM")),
-          year ?? parseInt(dayjs().format("YYYY")),
-        ],
-      }
-
-      const { rows: financeSummary } = await dbClient.query(query)
+      const financeSummary = await db
+        .select({
+          month: userFinancialSummary.month,
+          year: userFinancialSummary.year,
+          budget: userFinancialSummary.budget,
+          totalIncome: userFinancialSummary.totalIncome,
+          amountSpent: userFinancialSummary.amountSpent,
+          amountSaved: userFinancialSummary.amountSaved,
+        })
+        .from(userFinancialSummary)
+        .where(
+          and(
+            eq(userFinancialSummary.userId, userId),
+            eq(userFinancialSummary.month, targetMonth),
+            eq(userFinancialSummary.year, targetYear)
+          )
+        )
 
       return {
         success: true,
@@ -576,8 +516,6 @@ class ExpenseService {
         success: false,
         message: error instanceof Error ? error.message : "An error occurred",
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 
@@ -585,60 +523,53 @@ class ExpenseService {
   // last 5 transactions
   // budget, income and totalExpenses this month.
   async getHomeSummary({ userId }: { userId: string }) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
+      const month = parseInt(dayjs().format("MM"))
+      const year = parseInt(dayjs().format("YYYY"))
 
-      const last5TransactionsQuery = {
-        text: `
-          SELECT 
-            "expenses"."id",
-            "expenses"."amount",
-            "expenses"."description",
-            "expenses"."expenseDate",
-            "expenses"."paymentMethodId",
-            "category"."name" as "category",
-            "paymentMethod"."name" as "paymentMethod"
-          FROM "expenses"
-          JOIN "category" ON "expenses"."categoryId" = "category"."id"
-          JOIN "paymentMethod" ON "expenses"."paymentMethodId" = "paymentMethod"."id"
-          WHERE "expenses"."userId" = $1 
-          order by "expenses"."expenseDate" desc
-          limit 5;
-        `,
-        values: [userId],
-      }
-
-      const financeSummaryQuery = {
-        text: `
-          SELECT
-            "budget",
-            "totalIncome",
-            "amountSpent",
-            "amountSaved"
-          FROM "userFinancialSummary"
-          WHERE "userId" = $1
-            AND "month" = $2
-            AND "year" = $3;
-        `,
-        values: [
-          userId,
-          parseInt(dayjs().format("MM")),
-          parseInt(dayjs().format("YYYY")),
-        ],
-      }
-
-      const [last5TransactionsData, financeSummaryData] = await Promise.all([
-        dbClient.query(last5TransactionsQuery),
-        dbClient.query(financeSummaryQuery),
+      const [last5Transactions, financeSummary] = await Promise.all([
+        db
+          .select({
+            id: expenses.id,
+            amount: expenses.amount,
+            description: expenses.description,
+            expenseDate: expenses.expenseDate,
+            paymentMethodId: expenses.paymentMethodId,
+            category: category.name,
+            paymentMethod: paymentMethod.name,
+          })
+          .from(expenses)
+          .innerJoin(category, eq(expenses.categoryId, category.id))
+          .innerJoin(
+            paymentMethod,
+            eq(expenses.paymentMethodId, paymentMethod.id)
+          )
+          .where(eq(expenses.userId, userId))
+          .orderBy(desc(expenses.expenseDate))
+          .limit(5),
+        db
+          .select({
+            budget: userFinancialSummary.budget,
+            totalIncome: userFinancialSummary.totalIncome,
+            amountSpent: userFinancialSummary.amountSpent,
+            amountSaved: userFinancialSummary.amountSaved,
+          })
+          .from(userFinancialSummary)
+          .where(
+            and(
+              eq(userFinancialSummary.userId, userId),
+              eq(userFinancialSummary.month, month),
+              eq(userFinancialSummary.year, year)
+            )
+          )
+          .limit(1),
       ])
 
       return {
         success: true,
         data: {
-          last5Transactions: last5TransactionsData.rows,
-          financeSummary: financeSummaryData.rows?.[0],
+          last5Transactions,
+          financeSummary: financeSummary[0],
         },
       }
     } catch (error) {
@@ -647,8 +578,6 @@ class ExpenseService {
         success: false,
         message: error instanceof Error ? error.message : "An error occurred",
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 }

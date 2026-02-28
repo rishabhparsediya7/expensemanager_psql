@@ -1,7 +1,8 @@
 // socket.ts
 import { Server, Socket } from "socket.io"
-import config from "./database"
-import pg from "pg"
+import { db } from "./db"
+import { userKeys, messages, users } from "./db/schema"
+import { eq } from "drizzle-orm"
 import { sendPushNotification } from "./firebaseAdmin"
 
 let io: Server
@@ -34,33 +35,26 @@ export function initSocket(server: any) {
       async ({ senderId, receiverId, message, nonce }: MessagePayload) => {
         console.log(`📨 Encrypted message from ${senderId} to ${receiverId}`)
 
-        let dbClient
         try {
-          dbClient = new pg.Client(config)
-          await dbClient.connect()
+          const keyResult = await db
+            .select({ publicKey: userKeys.publicKey })
+            .from(userKeys)
+            .where(eq(userKeys.userId, senderId))
+            .limit(1)
 
-          const result = await dbClient.query(
-            `SELECT "publicKey" FROM "userKeys" WHERE "userId" = $1`,
-            [senderId]
-          )
-          await dbClient.end()
-
-          if (result.rowCount === 0) {
+          if (keyResult.length === 0) {
             console.warn(`⚠️ No public key found for sender ${senderId}`)
             return
           }
 
-          const senderPublicKey = result.rows[0].publicKey
+          const senderPublicKey = keyResult[0].publicKey
 
-          dbClient = new pg.Client(config)
-          await dbClient.connect()
-
-          await dbClient.query(
-            `INSERT INTO messages (sender_id, receiver_id, message, nonce) VALUES ($1, $2, $3, $4)`,
-            [senderId, receiverId, message, nonce]
-          )
-
-          await dbClient.end()
+          await db.insert(messages).values({
+            senderId,
+            receiverId,
+            message,
+            nonce,
+          })
 
           const receiverSocketId = onlineUsers.get(receiverId)
           console.log("🚀 ~ initSocket ~ receiverSocketId:", receiverSocketId)
@@ -77,17 +71,19 @@ export function initSocket(server: any) {
               `📴 Receiver ${receiverId} is offline, sending push notification`
             )
             // Get sender name for the notification
-            const senderClient = new pg.Client(config)
-            await senderClient.connect()
-            const senderResult = await senderClient.query(
-              `SELECT "firstName", "lastName" FROM users WHERE id = $1`,
-              [senderId]
-            )
-            await senderClient.end()
+            const senderResult = await db
+              .select({
+                firstName: users.firstName,
+                lastName: users.lastName,
+              })
+              .from(users)
+              .where(eq(users.id, senderId))
+              .limit(1)
 
-            const senderName = senderResult.rows[0]
-              ? `${senderResult.rows[0].firstName} ${senderResult.rows[0].lastName}`
-              : "Someone"
+            const senderName =
+              senderResult.length > 0
+                ? `${senderResult[0].firstName} ${senderResult[0].lastName}`
+                : "Someone"
 
             sendPushNotification(
               receiverId,

@@ -2,8 +2,9 @@ import admin from "firebase-admin"
 import { fileURLToPath } from "url"
 import path from "path"
 import fs from "fs"
-import pg from "pg"
-import config from "./database"
+import { db } from "./db"
+import { deviceTokens, notifications } from "./db/schema"
+import { eq, inArray } from "drizzle-orm"
 
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url)
@@ -29,31 +30,28 @@ export async function sendPushNotification(
   data: Record<string, string> = {},
   type: string = "general"
 ) {
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
-
     // Store notification in the database for in-app inbox
-    await dbClient.query(
-      `INSERT INTO notifications ("userId", type, title, body, data) VALUES ($1, $2, $3, $4, $5)`,
-      [userId, type, title, body, JSON.stringify(data)]
-    )
+    await db.insert(notifications).values({
+      userId,
+      type,
+      title,
+      body,
+      data: JSON.stringify(data),
+    })
 
     // Get all FCM tokens for this user
-    const result = await dbClient.query(
-      `SELECT token FROM "deviceTokens" WHERE "userId" = $1`,
-      [userId]
-    )
+    const result = await db
+      .select({ token: deviceTokens.token })
+      .from(deviceTokens)
+      .where(eq(deviceTokens.userId, userId))
 
-    await dbClient.end()
-
-    if (result.rows.length === 0) {
+    if (result.length === 0) {
       console.log(`📱 No device tokens found for user ${userId}`)
       return
     }
 
-    const tokens = result.rows.map((row: any) => row.token)
+    const tokens = result.map((row) => row.token)
 
     // Send to all devices
     const message: admin.messaging.MulticastMessage = {
@@ -99,26 +97,17 @@ export async function sendPushNotification(
           invalidTokens.push(tokens[idx])
         }
       })
+
       if (invalidTokens.length > 0) {
-        const cleanupClient = new pg.Client(config)
-        await cleanupClient.connect()
-        for (const token of invalidTokens) {
-          await cleanupClient.query(
-            `DELETE FROM "deviceTokens" WHERE token = $1`,
-            [token]
-          )
-        }
-        await cleanupClient.end()
+        await db
+          .delete(deviceTokens)
+          .where(inArray(deviceTokens.token, invalidTokens))
+
         console.log(`🧹 Cleaned up ${invalidTokens.length} invalid tokens`)
       }
     }
   } catch (error) {
     console.error("❌ Error sending push notification:", error)
-    if (dbClient) {
-      try {
-        await dbClient.end()
-      } catch {}
-    }
   }
 }
 

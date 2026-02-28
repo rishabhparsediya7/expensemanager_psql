@@ -1,6 +1,7 @@
 import { Request, Response } from "express"
-import pg from "pg"
-import config from "../database"
+import { db } from "../db"
+import { deviceTokens, notifications } from "../db/schema"
+import { eq, and, desc, sql, count } from "drizzle-orm"
 
 export const registerToken = async (req: Request, res: Response) => {
   const { userId, token, platform } = req.body
@@ -11,29 +12,24 @@ export const registerToken = async (req: Request, res: Response) => {
       .json({ error: "userId, token, and platform are required" })
   }
 
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
-
     // Upsert: insert or update on conflict
-    await dbClient.query(
-      `INSERT INTO "deviceTokens" ("userId", token, platform)
-       VALUES ($1, $2, $3)
-       ON CONFLICT ("userId", token) DO UPDATE SET platform = $3, "createdAt" = NOW()`,
-      [userId, token, platform]
-    )
+    await db
+      .insert(deviceTokens)
+      .values({
+        userId,
+        token,
+        platform,
+      })
+      .onConflictDoUpdate({
+        target: [deviceTokens.userId, deviceTokens.token],
+        set: { platform, createdAt: new Date().toISOString() },
+      })
 
-    await dbClient.end()
     console.log(`📱 FCM token registered for user ${userId} (${platform})`)
     res.status(200).json({ success: true })
   } catch (error) {
     console.error("❌ Error registering FCM token:", error)
-    if (dbClient) {
-      try {
-        await dbClient.end()
-      } catch {}
-    }
     res.status(500).json({ error: "Failed to register token" })
   }
 }
@@ -45,26 +41,17 @@ export const unregisterToken = async (req: Request, res: Response) => {
     return res.status(400).json({ error: "userId and token are required" })
   }
 
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
+    await db
+      .delete(deviceTokens)
+      .where(
+        and(eq(deviceTokens.userId, userId), eq(deviceTokens.token, token))
+      )
 
-    await dbClient.query(
-      `DELETE FROM "deviceTokens" WHERE "userId" = $1 AND token = $2`,
-      [userId, token]
-    )
-
-    await dbClient.end()
     console.log(`📱 FCM token unregistered for user ${userId}`)
     res.status(200).json({ success: true })
   } catch (error) {
     console.error("❌ Error unregistering FCM token:", error)
-    if (dbClient) {
-      try {
-        await dbClient.end()
-      } catch {}
-    }
     res.status(500).json({ error: "Failed to unregister token" })
   }
 }
@@ -77,33 +64,29 @@ export const getNotifications = async (req: Request, res: Response) => {
     return res.status(400).json({ error: "userId is required" })
   }
 
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
+    const [result, unreadCountResult] = await Promise.all([
+      db
+        .select()
+        .from(notifications)
+        .where(eq(notifications.userId, userId))
+        .orderBy(desc(notifications.createdAt))
+        .limit(Number(limit))
+        .offset(Number(offset)),
+      db
+        .select({ count: count() })
+        .from(notifications)
+        .where(
+          and(eq(notifications.userId, userId), eq(notifications.isRead, false))
+        ),
+    ])
 
-    const result = await dbClient.query(
-      `SELECT * FROM notifications WHERE "userId" = $1 ORDER BY "createdAt" DESC LIMIT $2 OFFSET $3`,
-      [userId, Number(limit), Number(offset)]
-    )
-
-    const unreadCount = await dbClient.query(
-      `SELECT COUNT(*) as count FROM notifications WHERE "userId" = $1 AND "isRead" = false`,
-      [userId]
-    )
-
-    await dbClient.end()
     res.json({
-      notifications: result.rows,
-      unreadCount: Number(unreadCount.rows[0].count),
+      notifications: result,
+      unreadCount: Number(unreadCountResult[0].count),
     })
   } catch (error) {
     console.error("❌ Error fetching notifications:", error)
-    if (dbClient) {
-      try {
-        await dbClient.end()
-      } catch {}
-    }
     res.status(500).json({ error: "Failed to fetch notifications" })
   }
 }
@@ -111,25 +94,15 @@ export const getNotifications = async (req: Request, res: Response) => {
 export const markAsRead = async (req: Request, res: Response) => {
   const { notificationId } = req.params
 
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
+    await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(eq(notifications.id, notificationId))
 
-    await dbClient.query(
-      `UPDATE notifications SET "isRead" = true WHERE id = $1`,
-      [notificationId]
-    )
-
-    await dbClient.end()
     res.status(200).json({ success: true })
   } catch (error) {
     console.error("❌ Error marking notification as read:", error)
-    if (dbClient) {
-      try {
-        await dbClient.end()
-      } catch {}
-    }
     res.status(500).json({ error: "Failed to mark notification as read" })
   }
 }
@@ -137,25 +110,17 @@ export const markAsRead = async (req: Request, res: Response) => {
 export const markAllAsRead = async (req: Request, res: Response) => {
   const { userId } = req.params
 
-  let dbClient
   try {
-    dbClient = new pg.Client(config)
-    await dbClient.connect()
+    await db
+      .update(notifications)
+      .set({ isRead: true })
+      .where(
+        and(eq(notifications.userId, userId), eq(notifications.isRead, false))
+      )
 
-    await dbClient.query(
-      `UPDATE notifications SET "isRead" = true WHERE "userId" = $1 AND "isRead" = false`,
-      [userId]
-    )
-
-    await dbClient.end()
     res.status(200).json({ success: true })
   } catch (error) {
     console.error("❌ Error marking all notifications as read:", error)
-    if (dbClient) {
-      try {
-        await dbClient.end()
-      } catch {}
-    }
     res.status(500).json({ error: "Failed to mark all as read" })
   }
 }

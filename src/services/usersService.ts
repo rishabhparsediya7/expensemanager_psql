@@ -1,8 +1,6 @@
-import pg from "pg"
-import config from "../database"
 import { db } from "../db"
-import { users } from "../db/schema"
-import { or, ilike, and, ne } from "drizzle-orm"
+import { users, userFinancialSummary } from "../db/schema"
+import { or, ilike, and, ne, eq, sql } from "drizzle-orm"
 
 interface User {
   id: string
@@ -19,118 +17,80 @@ interface User {
   totalIncome: string
 }
 
-type UserForUpdate = Omit<
-  User,
-  | "budget"
-  | "totalIncome"
-  | "createdAt"
-  | "updatedAt"
-  | "profilePicture"
-  | "id"
-  | "provider"
-> & { updatedAt: Date }
-
 class UsersService {
   async getUserById(userId: string) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      dbClient
-        .connect()
-        .then(() => {
-          console.log("database connected sucesfully!")
+      const result = await db
+        .select({
+          id: users.id,
+          name: sql<string>`${users.firstName} || ' ' || ${users.lastName}`,
+          email: users.email,
+          phoneNumber: users.phoneNumber,
+          profilePicture: users.profilePicture,
+          createdAt: users.createdAt,
+          updatedAt: users.updatedAt,
+          provider: users.provider,
+          budget: userFinancialSummary.budget,
+          totalIncome: userFinancialSummary.totalIncome,
         })
-        .catch((err) => console.log(err))
-      const query = `SELECT 
-                      u.id,
-                      u."firstName" || ' ' || u."lastName" AS name,
-                      u.email,
-                      u."phoneNumber",
-                      u."profilePicture",
-                      u."createdAt",
-                      u."updatedAt",
-                      u.provider,
-                      ufs.budget,
-                      ufs."totalIncome"
-                    FROM users u
-                    LEFT JOIN "userFinancialSummary" ufs
-                      ON ufs."userId" = u.id
-                      AND ufs."month" = EXTRACT(MONTH FROM CURRENT_DATE)
-                      AND ufs."year" = EXTRACT(YEAR FROM CURRENT_DATE)
-                    WHERE u.id = $1`
-      const result = await dbClient.query({
-        text: query,
-        values: [userId],
-      })
+        .from(users)
+        .leftJoin(
+          userFinancialSummary,
+          and(
+            eq(userFinancialSummary.userId, users.id),
+            eq(
+              userFinancialSummary.month,
+              sql`EXTRACT(MONTH FROM CURRENT_DATE)`
+            ),
+            eq(userFinancialSummary.year, sql`EXTRACT(YEAR FROM CURRENT_DATE)`)
+          )
+        )
+        .where(eq(users.id, userId))
+        .limit(1)
 
-      const user: User = result.rows?.[0]
-      const {
-        name,
-        email,
-        id,
-        phoneNumber,
-        profilePicture,
-        createdAt,
-        updatedAt,
-        provider,
-        budget,
-        totalIncome,
-      } = user
+      if (result.length === 0) {
+        return {
+          success: false,
+          message: "User not found",
+        }
+      }
+
+      const user = result[0]
       return {
         success: true,
         message: "User fetched successfully",
-        userId: id,
+        userId: user.id,
         user: {
-          name,
-          email,
-          id,
-          phoneNumber,
-          profilePicture,
-          createdAt,
-          updatedAt,
-          userLoginProvider: provider,
-          budget,
-          totalIncome,
+          ...user,
+          userLoginProvider: user.provider,
+          createdAt: new Date(user.createdAt || ""),
+          updatedAt: new Date(user.updatedAt || ""),
         },
       }
     } catch (error) {
       console.log("🚀 ~ UsersService ~ getUserById ~ error:", error)
       return {
         success: false,
-        message: error,
+        message: (error as Error).message,
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 
   async updateUser(userId: string, data: Record<string, any>) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      await dbClient.connect()
-
       const firstName = data.name.split(" ")[0]
       const lastName = data.name.split(" ")[1]
 
-      const dataObject: UserForUpdate = {
-        firstName,
-        lastName,
-        email: data.email,
-        phoneNumber: data.phoneNumber,
-        updatedAt: new Date(),
-      }
-
-      const setClause = Object.keys(dataObject)
-        .map((key, index) => `"${key}" = $${index + 1}`)
-        .join(", ")
-
-      const clientQueryObject = {
-        text: `UPDATE users SET ${setClause} WHERE id = $${Object.values(dataObject).length + 1}`,
-        values: [...Object.values(dataObject), userId],
-      }
-
-      await dbClient.query(clientQueryObject)
+      await db
+        .update(users)
+        .set({
+          firstName,
+          lastName,
+          email: data.email,
+          phoneNumber: data.phoneNumber,
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(users.id, userId))
 
       return {
         success: true,
@@ -142,57 +102,44 @@ class UsersService {
         success: false,
         message: (error as Error).message,
       }
-    } finally {
-      await dbClient?.end()
     }
   }
 
   async getProfilePic(userId: string) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      dbClient
-        .connect()
-        .then(() => {
-          console.log("database connected sucesfully!")
-        })
-        .catch((err) => console.log(err))
-      const result = await dbClient.query({
-        text: `select profile_picture from users where id = $1`,
-        values: [userId],
-      })
+      const result = await db
+        .select({ profilePicture: users.profilePicture })
+        .from(users)
+        .where(eq(users.id, userId))
+        .limit(1)
 
-      const user: any = result.rows?.[0]
-      const { profile_picture } = user
+      if (result.length === 0) {
+        return {
+          success: false,
+          message: "User not found",
+        }
+      }
+
       return {
         success: true,
         message: "Profile picture fetched successfully",
-        profile_picture,
+        profile_picture: result[0].profilePicture,
       }
     } catch (error) {
       console.log("🚀 ~ UsersService ~ getProfilePic ~ error:", error)
       return {
         success: false,
-        message: error,
+        message: (error as Error).message,
       }
-    } finally {
-      await dbClient?.end()
     }
   }
+
   async uploadProfilePic(userId: string, file: Express.Multer.File) {
-    let dbClient
     try {
-      dbClient = new pg.Client(config)
-      dbClient
-        .connect()
-        .then(() => {
-          console.log("database connected sucesfully!")
-        })
-        .catch((err) => console.log(err))
-      const result = await dbClient.query({
-        text: `update users set profile_picture = $1 where id = $2`,
-        values: [file.path, userId],
-      })
+      await db
+        .update(users)
+        .set({ profilePicture: file.path })
+        .where(eq(users.id, userId))
 
       return {
         success: true,
@@ -202,10 +149,8 @@ class UsersService {
       console.log("🚀 ~ UsersService ~ uploadProfilePic ~ error:", error)
       return {
         success: false,
-        message: error,
+        message: (error as Error).message,
       }
-    } finally {
-      await dbClient?.end()
     }
   }
   async searchUsers(query: string, currentUserId: string) {
