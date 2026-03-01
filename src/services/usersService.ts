@@ -32,6 +32,13 @@ class UsersService {
           provider: users.provider,
           budget: userFinancialSummary.budget,
           totalIncome: userFinancialSummary.totalIncome,
+          amountSpent: sql<string>`(
+            SELECT COALESCE(SUM(amount), 0) 
+            FROM expenses 
+            WHERE "userId" = ${users.id} 
+            AND EXTRACT(MONTH FROM "expenseDate") = EXTRACT(MONTH FROM CURRENT_DATE)
+            AND EXTRACT(YEAR FROM "expenseDate") = EXTRACT(YEAR FROM CURRENT_DATE)
+          )`,
         })
         .from(users)
         .leftJoin(
