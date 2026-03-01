@@ -1,5 +1,6 @@
 import { Request, Response } from "express"
 import ExpenseService, { filterType } from "../services/expenseService"
+import { parseRawTextToDrafts } from "../utils/expenseParser"
 
 // Add an Expense
 export const addExpense = async (req: Request, res: Response) => {
@@ -11,7 +12,7 @@ export const addExpense = async (req: Request, res: Response) => {
     return
   }
 
-  if (!amount || !description || !category) {
+  if (!amount || !description) {
     res.status(400).json({ success: false, message: "Missing required fields" })
     return
   }
@@ -244,5 +245,61 @@ export const getHomeSummary = async (req: Request, res: Response) => {
     }
   } catch (error) {
     res.status(500).json({ success: false, message: error })
+  }
+}
+
+// Quick Add: Parse raw text into draft expenses
+export const getDraftExpenses = async (req: Request, res: Response) => {
+  try {
+    const { rawText } = req.body
+    if (!rawText) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Raw text is required" })
+    }
+
+    const drafts = parseRawTextToDrafts(rawText)
+    return res.status(200).json({ success: true, data: drafts })
+  } catch (error) {
+    console.error("Error parsing raw text:", error)
+    return res
+      .status(500)
+      .json({ success: false, message: (error as Error).message })
+  }
+}
+
+// Quick Add: Confirm and save verified expenses
+export const confirmBulkAdd = async (req: Request, res: Response) => {
+  try {
+    const userId = req?.userId
+    if (!userId) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid Request" })
+    }
+
+    const { verifiedExpenses } = req.body
+    if (!verifiedExpenses || !Array.isArray(verifiedExpenses)) {
+      return res.status(400).json({
+        success: false,
+        message: "Verified expenses array is required",
+      })
+    }
+
+    const response = await ExpenseService.bulkAddExpenses(
+      userId,
+      verifiedExpenses
+    )
+
+    if (response.success) {
+      return res.status(201).json(response)
+    } else {
+      return res.status(400).json(response)
+    }
+  } catch (error) {
+    console.error("Error confirming bulk add:", error)
+    return res
+      .status(500)
+      .json({ success: false, message: (error as Error).message })
   }
 }

@@ -60,6 +60,37 @@ class ExpenseService {
     }
   }
 
+  // Bulk Add Expenses
+  async bulkAddExpenses(
+    userId: string,
+    expenseList: Omit<AddExpense, "userId">[]
+  ) {
+    try {
+      if (!expenseList || expenseList.length === 0) {
+        return { success: true, data: [] }
+      }
+
+      const valuesToInsert = expenseList.map((exp) => ({
+        userId,
+        amount: String(exp.amount),
+        categoryId: exp.category || null,
+        description: exp.description,
+        expenseDate: exp.expenseDate || new Date().toISOString(),
+        paymentMethodId: exp.paymentMethodId || null,
+      }))
+
+      const insertedExpenses = await db
+        .insert(expenses)
+        .values(valuesToInsert)
+        .returning()
+
+      return { success: true, data: insertedExpenses }
+    } catch (error) {
+      console.error("🚀 ~ ExpenseService ~ bulkAddExpenses ~ error:", error)
+      return { success: false, message: (error as Error).message }
+    }
+  }
+
   // Get Expenses with filering
   // pagination, sorting and custom date range
   async getExpense({

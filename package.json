@@ -43,6 +43,8 @@
     "@neondatabase/serverless": "^0.10.4",
     "bcrypt": "^5.1.1",
     "cloudinary": "^2.6.1",
+    "compromise": "^14.15.0",
+    "compromise-numbers": "^1.4.0",
     "cors": "^2.8.5",
     "dayjs": "^1.11.13",
     "dotenv": "^16.4.7",

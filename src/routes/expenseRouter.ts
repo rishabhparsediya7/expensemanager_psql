@@ -11,6 +11,8 @@ import {
   addIncome,
   getUserFinanceSummary,
   getHomeSummary,
+  getDraftExpenses,
+  confirmBulkAdd,
 } from "../controllers/expenseController"
 import authenticateJWT from "../middlewares/authenticate"
 import fs from "fs"
@@ -59,6 +61,10 @@ expenseRouter.get("/getExpenseByCategory", getExpenseByCategory)
 expenseRouter.post("/add-budget", addBudget)
 expenseRouter.post("/add-income", addIncome)
 expenseRouter.get("/get-user-finance-summary", getUserFinanceSummary)
+
+// Quick Add Routes
+expenseRouter.post("/parse-text", getDraftExpenses)
+expenseRouter.post("/bulk-add", confirmBulkAdd)
 
 expenseRouter.get("/generate-report", async (req, res) => {
   const userId = req?.userId
