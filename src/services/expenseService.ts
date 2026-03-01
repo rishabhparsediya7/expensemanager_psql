@@ -570,8 +570,8 @@ class ExpenseService {
             paymentMethod: paymentMethod.name,
           })
           .from(expenses)
-          .innerJoin(category, eq(expenses.categoryId, category.id))
-          .innerJoin(
+          .leftJoin(category, eq(expenses.categoryId, category.id))
+          .leftJoin(
             paymentMethod,
             eq(expenses.paymentMethodId, paymentMethod.id)
           )
