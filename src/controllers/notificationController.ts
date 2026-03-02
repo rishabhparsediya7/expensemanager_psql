@@ -57,8 +57,12 @@ export const unregisterToken = async (req: Request, res: Response) => {
 }
 
 export const getNotifications = async (req: Request, res: Response) => {
-  const { userId } = req.params
+  let { userId } = req.params
   const { limit = "20", offset = "0" } = req.query
+
+  if (userId === "me" || !userId) {
+    userId = req.userId as string
+  }
 
   if (!userId) {
     return res.status(400).json({ error: "userId is required" })
@@ -108,7 +112,15 @@ export const markAsRead = async (req: Request, res: Response) => {
 }
 
 export const markAllAsRead = async (req: Request, res: Response) => {
-  const { userId } = req.params
+  let { userId } = req.params
+
+  if (userId === "me" || !userId) {
+    userId = req.userId as string
+  }
+
+  if (!userId) {
+    return res.status(400).json({ error: "userId is required" })
+  }
 
   try {
     await db
