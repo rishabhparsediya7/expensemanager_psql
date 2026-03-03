@@ -13,8 +13,23 @@ import { sendPushNotification } from "../firebaseAdmin"
 import MediaService from "../services/mediaService"
 
 export const uploadKeys = async (req: Request, res: Response) => {
-  const { userId, publicKey, privateKey } = req.body
+  const { userId, publicKey, privateKey, force } = req.body
   try {
+    // Check if keys already exist
+    if (!force) {
+      const existing = await db
+        .select()
+        .from(userKeys)
+        .where(eq(userKeys.userId, userId))
+        .limit(1)
+
+      if (existing.length > 0) {
+        return res
+          .status(400)
+          .json({ error: "Keys already exist. Use force=true to overwrite." })
+      }
+    }
+
     await db
       .insert(userKeys)
       .values({
@@ -175,8 +190,23 @@ export const getFriends = async (req: Request, res: Response) => {
 }
 
 export const uploadPassphrase = async (req: Request, res: Response) => {
-  const { userId, cipherText, iv } = req.body
+  const { userId, cipherText, iv, force } = req.body
   try {
+    // Check if passphrase already exists
+    if (!force) {
+      const existing = await db
+        .select()
+        .from(userPassphrases)
+        .where(eq(userPassphrases.userId, userId))
+        .limit(1)
+
+      if (existing.length > 0) {
+        return res.status(400).json({
+          error: "Passphrase already exists. Use force=true to overwrite.",
+        })
+      }
+    }
+
     await db
       .insert(userPassphrases)
       .values({
