@@ -141,19 +141,19 @@ class UsersService {
     }
   }
 
-  async uploadProfilePic(userId: string, file: Express.Multer.File) {
+  async updateProfilePicture(userId: string, r2Key: string) {
     try {
       await db
         .update(users)
-        .set({ profilePicture: file.path })
+        .set({ profilePicture: r2Key })
         .where(eq(users.id, userId))
 
       return {
         success: true,
-        message: "Profile picture uploaded successfully",
+        message: "Profile picture updated successfully",
       }
     } catch (error) {
-      console.log("🚀 ~ UsersService ~ uploadProfilePic ~ error:", error)
+      console.log("🚀 ~ UsersService ~ updateProfilePicture ~ error:", error)
       return {
         success: false,
         message: (error as Error).message,

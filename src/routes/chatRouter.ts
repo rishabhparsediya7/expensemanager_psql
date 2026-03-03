@@ -1,18 +1,17 @@
 import { Router } from "express"
-import pg from "pg"
-import config from "../database"
-import authenticateJWT from "../middlewares/authenticate"
 import {
   getFriends,
   getHistory,
-  getUserKeys,
-  sendMessage,
-  uploadPassphrase,
-  uploadKeys,
-  sendSplinkRequest,
-  respondToSplinkRequest,
   getPendingSplinks,
+  getSentSplinks,
+  getUserKeys,
+  respondToSplinkRequest,
+  sendMessage,
+  sendSplinkRequest,
+  uploadKeys,
+  uploadPassphrase,
 } from "../controllers/chatController"
+import authenticateJWT from "../middlewares/authenticate"
 
 const router = Router()
 
@@ -35,5 +34,6 @@ router.get("/getFriends/:userId", getFriends)
 router.post("/splink/request", sendSplinkRequest)
 router.post("/splink/response", respondToSplinkRequest)
 router.get("/splink/pending", getPendingSplinks)
+router.get("/splink/sent", getSentSplinks)
 
 export default router

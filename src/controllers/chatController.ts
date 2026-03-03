@@ -10,6 +10,7 @@ import {
 import { and, eq, or, desc, sql } from "drizzle-orm"
 import { getIO, onlineUsers } from "../socket"
 import { sendPushNotification } from "../firebaseAdmin"
+import MediaService from "../services/mediaService"
 
 export const uploadKeys = async (req: Request, res: Response) => {
   const { userId, publicKey, privateKey } = req.body
@@ -126,9 +127,6 @@ export const getFriends = async (req: Request, res: Response) => {
   try {
     const { userId } = req.params
 
-    // Using a lateral join equivalent in Drizzle can be tricky,
-    // so we'll use a subquery or a raw SQL for the complex part if needed.
-    // However, we can also use Drizzle's execute for the original complex query to be safe and efficient.
     const result = await db.execute(sql`
           SELECT
             u.id AS "friendId",
@@ -154,7 +152,22 @@ export const getFriends = async (req: Request, res: Response) => {
           ORDER BY m.sent_at DESC NULLS LAST;
     `)
 
-    res.send(result.rows)
+    // Generate presigned URLs for friends' profile pictures
+    const friendsWithImages = await Promise.all(
+      result.rows.map(async (friend: any) => {
+        let image = null
+        if (friend.profilePicture) {
+          try {
+            image = await MediaService.getPresignedUrl(friend.profilePicture)
+          } catch {
+            // Profile picture not found in R2 — skip silently
+          }
+        }
+        return { ...friend, image }
+      })
+    )
+
+    res.send(friendsWithImages)
   } catch (err) {
     console.error("❌ Error fetching friends:", err)
     res.status(500).json({ error: "Failed to fetch friends" })
@@ -381,5 +394,32 @@ export const getPendingSplinks = async (req: Request, res: Response) => {
   } catch (err) {
     console.error("❌ Error fetching pending Splinks:", err)
     res.status(500).json({ error: "Failed to fetch pending Splinks" })
+  }
+}
+
+export const getSentSplinks = async (req: Request, res: Response) => {
+  const userId = req.userId
+
+  if (!userId) {
+    return res.status(401).json({ error: "Unauthorized" })
+  }
+
+  try {
+    const sent = await db
+      .select({
+        friendId: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        status: friends.status,
+      })
+      .from(friends)
+      .innerJoin(users, eq(users.id, friends.friendId))
+      .where(and(eq(friends.userId, userId), eq(friends.status, "pending")))
+
+    res.status(200).json(sent)
+  } catch (err) {
+    console.error("❌ Error fetching sent Splinks:", err)
+    res.status(500).json({ error: "Failed to fetch sent Splinks" })
   }
 }

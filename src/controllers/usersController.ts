@@ -1,7 +1,6 @@
 import { Request, Response } from "express"
 import UsersService from "../services/usersService"
-import cloudinary from "../config/cloudinary"
-import fs from "fs"
+import MediaService from "../services/mediaService"
 
 export const getUserById = async (req: Request, res: Response) => {
   const userId = req?.userId
@@ -11,6 +10,16 @@ export const getUserById = async (req: Request, res: Response) => {
   }
 
   const response = await UsersService.getUserById(userId)
+  if (response.success && response.user?.profilePicture) {
+    try {
+      response.user.profilePicture = await MediaService.getPresignedUrl(
+        response.user.profilePicture
+      )
+    } catch {
+      // R2 object not found — leave as-is
+    }
+  }
+
   if (response.success) {
     res.status(200).json(response)
   } else {
@@ -26,15 +35,8 @@ export const getProfilePic = async (req: Request, res: Response) => {
       return res.status(401).json({ error: "Unauthorized User" })
     }
 
-    const signedUrl = cloudinary.url(`users/${userId}/profile`, {
-      type: "private",
-      resource_type: "image",
-      secure: true,
-      sign_url: true,
-      expires_at: Math.floor(Date.now() / 1000) + 60 * 5, // 5 minutes
-    })
-
-    res.json({ url: signedUrl })
+    const url = await MediaService.getProfilePictureUrl(userId)
+    res.json({ url })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
@@ -47,23 +49,19 @@ export const uploadProfilePic = async (req: Request, res: Response) => {
     if (!userId) {
       return res.status(401).json({ error: "Unauthorized User" })
     }
-    const filePath = req.file?.path
 
+    const filePath = req.file?.path
     if (!filePath) return res.status(400).json({ error: "No file uploaded" })
 
-    const result = await cloudinary.uploader.upload(filePath, {
-      folder: `users/${userId}`,
-      public_id: "profile",
-      type: "private",
-      resource_type: "image",
-      overwrite: true,
-    })
+    const { key, url } = await MediaService.uploadProfilePicture(
+      userId,
+      filePath,
+      req.file?.mimetype || "image/jpeg"
+    )
 
-    await UsersService.updateUser(userId, { profilePicture: result.secure_url })
+    await UsersService.updateProfilePicture(userId, key)
 
-    fs.unlinkSync(filePath)
-
-    res.json({ message: "Uploaded successfully", asset_id: result.asset_id })
+    res.json({ message: "Uploaded successfully", url })
   } catch (err: any) {
     res.status(500).json({ error: err.message })
   }
