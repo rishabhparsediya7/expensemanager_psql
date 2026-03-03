@@ -34,7 +34,47 @@ sudo usermod -aG docker $USER
 # Logout and login back for changes to take effect
 ```
 
-## 2. Prepare the Application
+## 2. Deployment Strategies
+
+There are two ways to deploy: **Building from Source** (currently in `deploy.md`) or **Pulling a Pre-built Image** (Recommended for speed).
+
+### Option A: Pulling a Pre-built Image (Fastest)
+
+This avoids having source code on your server.
+
+1. **On your local machine**, build and push the image:
+
+   ```bash
+   # Login to Docker Hub (or your registry)
+   docker login
+
+   # Build and Tag (replace 'yourusername' with your actual username)
+   docker build -t yourusername/expense-manager:latest .
+
+   # Push
+   docker push yourusername/expense-manager:latest
+   ```
+
+2. **On the Ubuntu Server**, you only need the `docker-compose.yml` and `.env`. Update `docker-compose.yml` to use the image instead of `build: .`:
+
+   ```yaml
+   services:
+     app:
+       image: yourusername/expense-manager:latest
+       # ... rest of the config
+   ```
+
+3. **Deploy**:
+   ```bash
+   docker compose pull
+   docker compose up -d
+   ```
+
+---
+
+## 3. Prepare the Application (Building from Source)
+
+If you haven't set up a registry yet, follow these steps on the server:
 
 1. **Clone the repository** (or copy the files):
 
@@ -90,6 +130,54 @@ docker compose up -d --build
 ## 6. Accessing the Database (External)
 
 Your database is currently hosted on Aiven. The container connects to it using the credentials in your `.env` file. No additional database setup is required inside the Ubuntu instance unless you decide to move the database to Docker as well.
+
+## 7. Routing `/trakio` with Reverse Proxy (Nginx)
+
+To route only `/trakio` traffic to your new container while the rest of `api.backend.com` goes to your existing backend, update your Nginx configuration.
+
+1. **Edit the config**:
+
+   ```bash
+   sudo nano /etc/nginx/sites-available/default
+   # (Or wherever your site config resides)
+   ```
+
+2. **Add a location block inside your `server` block**:
+
+   ```nginx
+   server {
+       server_name api.backend.com;
+
+       # Route /trakio to the new container
+       location /trakio/ {
+           proxy_pass http://localhost:8000/; # Trailing slash is crucial
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+
+           # For Socket.IO (optional but recommended)
+           proxy_http_version 1.1;
+           proxy_set_header Upgrade $http_upgrade;
+           proxy_set_header Connection "upgrade";
+       }
+
+       # Your EXISTING backend config
+       location / {
+           proxy_pass http://localhost:3000; # Example existing port
+           # ...
+       }
+   }
+   ```
+
+   > [!IMPORTANT]
+   > The trailing slash in `proxy_pass http://localhost:8000/;` tells Nginx to strip the `/trakio` prefix before sending the request to the container. This means the app sees `/api/auth` instead of `/trakio/api/auth`.
+
+3. **Test and Reload**:
+   ```bash
+   sudo nginx -t
+   sudo systemctl reload nginx
+   ```
 
 ---
 

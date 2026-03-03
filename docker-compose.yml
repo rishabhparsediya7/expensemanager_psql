@@ -1,10 +1,10 @@
 services:
   app:
-    build: .
-    container_name: expense-manager-server
+    image: parsediyar/expense-manager:latest
+    container_name: trakio
     restart: always
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "8001:8000"
     env_file:
       - .env
     volumes:
