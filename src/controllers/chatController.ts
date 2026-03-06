@@ -325,30 +325,13 @@ export const respondToSplinkRequest = async (req: Request, res: Response) => {
 
   try {
     if (action === "accept") {
-      // Start transaction or sequential updates
-      await db.transaction(async (tx) => {
-        // Update the received request to accepted
-        await tx
-          .update(friends)
-          .set({ status: "accepted" })
-          .where(
-            and(eq(friends.userId, friendId), eq(friends.friendId, userId))
-          )
-
-        // Create the reverse connection for mutual friendship
-        await tx
-          .insert(friends)
-          .values({
-            userId: userId,
-            friendId: friendId,
-            status: "accepted",
-          })
-          .onConflictDoUpdate({
-            target: [friends.userId, friends.friendId],
-            set: { status: "accepted" },
-          })
-      })
-    } else {
+      // Update the received request to accepted.
+      // The database trigger will handle creating/updating the reverse connection automatically.
+      await db
+        .update(friends)
+        .set({ status: "accepted" })
+        .where(and(eq(friends.userId, friendId), eq(friends.friendId, userId)))
+    } else if (action === "reject") {
       await db
         .delete(friends)
         .where(and(eq(friends.userId, friendId), eq(friends.friendId, userId)))
