@@ -44,6 +44,7 @@ export const users = pgTable(
     ),
     profilePicture: text(),
     provider: text(),
+    isPremium: boolean().default(false).notNull(),
   },
   (table) => [unique("users_email_key").on(table.email)]
 )
@@ -185,6 +186,9 @@ export const groups = pgTable(
   {
     id: uuid().defaultRandom().primaryKey().notNull(),
     name: varchar({ length: 255 }).notNull(),
+    description: text(),
+    image: text(),
+    type: varchar("type", { length: 20 }).default("general").notNull(),
     createdByUser: uuid("createdByUser").notNull(),
     createdAt: timestamp("created_at", {
       withTimezone: true,
@@ -275,6 +279,7 @@ export const splitExpenses = pgTable(
     description: text().notNull(),
     totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull(),
     category: integer(),
+    groupId: uuid("group_id"),
     splitType: varchar("split_type", { length: 20 }).default("equal").notNull(),
     expenseDate: timestamp("expense_date", {
       withTimezone: true,
@@ -301,6 +306,11 @@ export const splitExpenses = pgTable(
       foreignColumns: [category.id],
       name: "splitExpenses_category_fkey",
     }).onDelete("set null"),
+    foreignKey({
+      columns: [table.groupId],
+      foreignColumns: [groups.id],
+      name: "splitExpenses_group_id_fkey",
+    }).onDelete("cascade"),
   ]
 )
 
@@ -445,6 +455,123 @@ export const notifications = pgTable(
       columns: [table.userId],
       foreignColumns: [users.id],
       name: "notifications_userId_fkey",
+    }).onDelete("cascade"),
+  ]
+)
+
+// ======================================
+// Group Messages Table (Premium-gated chat)
+// ======================================
+
+export const groupMessages = pgTable(
+  "groupMessages",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    groupId: uuid("group_id").notNull(),
+    senderId: uuid("sender_id").notNull(),
+    message: text().notNull(),
+    messageType: varchar("message_type", { length: 20 })
+      .default("text")
+      .notNull(), // text, expense_added, settlement, member_joined, member_left
+    metadata: text(), // JSON string: { expenseId, amount, etc. }
+    sentAt: timestamp("sent_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.groupId],
+      foreignColumns: [groups.id],
+      name: "groupMessages_group_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.senderId],
+      foreignColumns: [users.id],
+      name: "groupMessages_sender_id_fkey",
+    }).onDelete("cascade"),
+  ]
+)
+
+// ======================================
+// Group Balances Table
+// ======================================
+
+export const groupBalances = pgTable(
+  "groupBalances",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    groupId: uuid("group_id").notNull(),
+    userId: uuid("user_id").notNull(),
+    friendId: uuid("friend_id").notNull(),
+    balance: numeric({ precision: 12, scale: 2 }).default("0").notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.groupId],
+      foreignColumns: [groups.id],
+      name: "groupBalances_group_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [users.id],
+      name: "groupBalances_user_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.friendId],
+      foreignColumns: [users.id],
+      name: "groupBalances_friend_id_fkey",
+    }).onDelete("cascade"),
+    unique("groupBalances_group_user_friend_unique").on(
+      table.groupId,
+      table.userId,
+      table.friendId
+    ),
+  ]
+)
+
+// ======================================
+// Activity Logs Table
+// ======================================
+
+export const activityLogs = pgTable(
+  "activityLogs",
+  {
+    id: uuid().defaultRandom().primaryKey().notNull(),
+    userId: uuid("user_id").notNull(), // who performed the action
+    targetUserId: uuid("target_user_id"), // affected user (for 1:1 splits)
+    groupId: uuid("group_id"), // null for 1:1 activities
+    splitExpenseId: uuid("split_expense_id"),
+    action: varchar({ length: 30 }).notNull(), // expense_created, expense_updated, expense_deleted, settlement_created, member_added, member_removed
+    description: text().notNull(), // human-readable description
+    metadata: text(), // JSON string with additional details
+    isRead: boolean().default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "string" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.userId],
+      foreignColumns: [users.id],
+      name: "activityLogs_user_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.targetUserId],
+      foreignColumns: [users.id],
+      name: "activityLogs_target_user_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.groupId],
+      foreignColumns: [groups.id],
+      name: "activityLogs_group_id_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.splitExpenseId],
+      foreignColumns: [splitExpenses.id],
+      name: "activityLogs_split_expense_id_fkey",
     }).onDelete("cascade"),
   ]
 )

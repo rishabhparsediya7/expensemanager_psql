@@ -1,9 +1,10 @@
 // socket.ts
 import { Server, Socket } from "socket.io"
 import { db } from "./db"
-import { userKeys, messages, users } from "./db/schema"
+import { userKeys, messages, users, groupMembers } from "./db/schema"
 import { eq } from "drizzle-orm"
 import { sendPushNotification } from "./firebaseAdmin"
+import GroupChatService from "./services/groupChatService"
 
 let io: Server
 export const onlineUsers = new Map<string, string>()
@@ -25,9 +26,28 @@ export function initSocket(server: any) {
   io.on("connection", (socket: Socket) => {
     console.log("✅ Socket connected:", socket.id)
 
-    socket.on("register", (userId: string) => {
+    socket.on("register", async (userId: string) => {
       onlineUsers.set(userId, socket.id)
       console.log(`👤 User ${userId} is online with socket ${socket.id}`)
+
+      // Auto-join all group rooms the user belongs to
+      try {
+        const userGroups = await db
+          .select({ groupId: groupMembers.groupId })
+          .from(groupMembers)
+          .where(eq(groupMembers.userId, userId))
+
+        for (const { groupId } of userGroups) {
+          socket.join(`group:${groupId}`)
+        }
+        if (userGroups.length > 0) {
+          console.log(
+            `🏠 User ${userId} joined ${userGroups.length} group rooms`
+          )
+        }
+      } catch (err) {
+        console.error("Failed to auto-join group rooms:", err)
+      }
     })
 
     socket.on(
@@ -108,6 +128,110 @@ export function initSocket(server: any) {
         }
       }
     })
+
+    // ======================================
+    // Group Room Management
+    // ======================================
+
+    socket.on("join-group", (groupId: string) => {
+      socket.join(`group:${groupId}`)
+      console.log(`🏠 Socket ${socket.id} joined group:${groupId}`)
+    })
+
+    socket.on("leave-group", (groupId: string) => {
+      socket.leave(`group:${groupId}`)
+      console.log(`🚪 Socket ${socket.id} left group:${groupId}`)
+    })
+
+    // ======================================
+    // Group Chat (Premium-gated for text messages)
+    // ======================================
+
+    socket.on(
+      "send-group-message",
+      async ({
+        groupId,
+        senderId,
+        message,
+      }: {
+        groupId: string
+        senderId: string
+        message: string
+      }) => {
+        try {
+          const result = await GroupChatService.sendGroupMessage({
+            groupId,
+            senderId,
+            message,
+            messageType: "text",
+          })
+
+          if (result.success) {
+            // Broadcast to all members in the group room
+            io.to(`group:${groupId}`).emit("receive-group-message", {
+              ...result.data,
+              groupId,
+            })
+          } else {
+            // Notify sender of failure (e.g., premium required)
+            socket.emit("group-message-error", {
+              groupId,
+              message: result.message,
+              statusCode: (result as any).statusCode || 400,
+            })
+          }
+        } catch (err) {
+          console.error("send-group-message failed:", err)
+          socket.emit("group-message-error", {
+            groupId,
+            message: "Failed to send message",
+          })
+        }
+      }
+    )
+
+    // ======================================
+    // 1:1 Expense System Messages
+    // ======================================
+
+    socket.on(
+      "send-expense-message",
+      async ({
+        senderId,
+        receiverId,
+        message,
+        metadata,
+      }: {
+        senderId: string
+        receiverId: string
+        message: string
+        metadata: { splitExpenseId: string; amount: number; action: string }
+      }) => {
+        try {
+          // Save to messages DB
+          await db.insert(messages).values({
+            senderId,
+            receiverId,
+            message,
+            nonce: `expense_${metadata.splitExpenseId}_${Date.now()}`,
+          })
+
+          // Send via socket if receiver is online
+          const receiverSocketId = onlineUsers.get(receiverId)
+          if (receiverSocketId) {
+            io.to(receiverSocketId).emit("receive-message", {
+              senderId,
+              message,
+              nonce: `expense_${metadata.splitExpenseId}_${Date.now()}`,
+              type: "expense_notification",
+              metadata,
+            })
+          }
+        } catch (err) {
+          console.error("send-expense-message failed:", err)
+        }
+      }
+    )
   })
 }
 
