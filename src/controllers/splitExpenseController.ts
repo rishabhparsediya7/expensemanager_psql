@@ -1,6 +1,8 @@
 import { Request, Response } from "express"
 import { body, param, validationResult } from "express-validator"
 import SplitExpenseService from "../services/splitExpenseService"
+import ActivityService from "../services/activityService"
+import GroupChatService from "../services/groupChatService"
 import { sendPushNotification } from "../firebaseAdmin"
 
 // Validation middleware
@@ -45,6 +47,8 @@ export const createSplitExpense = async (req: Request, res: Response) => {
       participants,
       expenseDate,
       paidBy,
+      groupId,
+      splitType,
     } = req.body
     const createdBy = req.userId
 
@@ -56,23 +60,63 @@ export const createSplitExpense = async (req: Request, res: Response) => {
       participants,
       expenseDate,
       paidBy,
+      groupId,
+      splitType,
     })
 
     if (result.success) {
-      // 🔔 Notify all participants except the creator
-      if (participants && Array.isArray(participants)) {
-        for (const participant of participants) {
-          if (participant.userId !== createdBy) {
-            sendPushNotification(
-              participant.userId,
-              "New Split Expense",
-              `You've been added to a split expense: ${description} (₹${totalAmount})`,
-              { type: "split_expense", splitExpenseId: result.data?.id || "" },
-              "split_expense"
-            )
-          }
+      const expenseId = result.data?.id || ""
+
+      // Log activity
+      const recipientUserIds = participants
+        .map((p: any) => p.userId)
+        .filter((id: string) => id !== createdBy)
+
+      await ActivityService.logAndNotify(
+        {
+          userId: createdBy,
+          targetUserId:
+            recipientUserIds.length === 1 ? recipientUserIds[0] : undefined,
+          groupId: groupId || undefined,
+          splitExpenseId: expenseId,
+          action: "expense_created",
+          description: `Added ₹${totalAmount} for ${description}`,
+          metadata: {
+            totalAmount,
+            description,
+            splitType: splitType || "equal",
+            category,
+          },
+        },
+        {
+          recipientUserIds,
+          title: groupId ? "New Group Expense" : "New Split Expense",
+          body: `You've been added to a split expense: ${description} (₹${totalAmount})`,
+          data: { type: "split_expense", splitExpenseId: expenseId },
+          type: "split_expense",
+          excludeUserId: createdBy,
         }
+      )
+
+      // If 1:1 (non-group) expense with a friend, send a system chat message
+      if (!groupId && recipientUserIds.length === 1) {
+        const friendId = recipientUserIds[0]
+        // We'll emit via socket if available, and save to DB via the chat system
+        // For now, the controller sends the push notification above
+        // The socket integration will handle real-time delivery in Phase 4
       }
+
+      // If group expense, add a system message in group chat
+      if (groupId) {
+        await GroupChatService.addSystemMessage(
+          groupId,
+          createdBy,
+          "expense_added",
+          `💰 Added expense: ${description} — ₹${totalAmount}`,
+          { splitExpenseId: expenseId, amount: totalAmount, description }
+        )
+      }
+
       return res.status(201).json(result)
     } else {
       return res.status(400).json(result)
@@ -178,13 +222,24 @@ export const settleUp = async (req: Request, res: Response) => {
     })
 
     if (result.success) {
-      // 🔔 Notify the payee about the settlement
-      sendPushNotification(
-        payeeId,
-        "Payment Received",
-        `You received a payment of ₹${amount}${note ? `: ${note}` : ""}`,
-        { type: "settlement", splitExpenseId, payerId },
-        "settlement"
+      // Log activity + notify
+      await ActivityService.logAndNotify(
+        {
+          userId: payerId,
+          targetUserId: payeeId,
+          splitExpenseId,
+          action: "settlement_created",
+          description: `Paid ₹${amount}${note ? ` for ${note}` : ""}`,
+          metadata: { amount, payerId, payeeId, note },
+        },
+        {
+          recipientUserIds: [payeeId],
+          title: "Payment Received",
+          body: `You received a payment of ₹${amount}${note ? `: ${note}` : ""}`,
+          data: { type: "settlement", splitExpenseId, payerId },
+          type: "settlement",
+          excludeUserId: payerId,
+        }
       )
       return res.status(200).json(result)
     } else {
@@ -225,15 +280,84 @@ export const deleteSplitExpense = async (req: Request, res: Response) => {
   try {
     const { id } = req.params
     const userId = req.userId
+
+    // Get expense details before deleting for activity logging
+    const details = await SplitExpenseService.getSplitExpenseDetails(id)
+
     const result = await SplitExpenseService.deleteSplitExpense(id, userId)
 
-    if (result.success) {
+    if (result.success && details.success && details.data) {
+      const expense = details.data as any
+      const participantIds =
+        expense.participants
+          ?.map((p: any) => p.userId)
+          .filter((pid: string) => pid !== userId) || []
+
+      // Log activity + notify
+      await ActivityService.logAndNotify(
+        {
+          userId,
+          groupId: expense.groupId || undefined,
+          splitExpenseId: id,
+          action: "expense_deleted",
+          description: `Deleted expense: ${expense.description} (₹${expense.totalAmount})`,
+          metadata: {
+            description: expense.description,
+            totalAmount: expense.totalAmount,
+          },
+        },
+        {
+          recipientUserIds: participantIds,
+          title: "Expense Deleted",
+          body: `An expense was deleted: ${expense.description} (₹${expense.totalAmount})`,
+          data: { type: "expense_deleted", splitExpenseId: id },
+          type: "expense_deleted",
+          excludeUserId: userId,
+        }
+      )
+
+      // If group expense, add system message
+      if (expense.groupId) {
+        await GroupChatService.addSystemMessage(
+          expense.groupId,
+          userId,
+          "expense_deleted",
+          `🗑️ Deleted expense: ${expense.description} (₹${expense.totalAmount})`,
+          {
+            splitExpenseId: id,
+            description: expense.description,
+            amount: expense.totalAmount,
+          }
+        )
+      }
+
+      return res.status(200).json(result)
+    } else if (result.success) {
       return res.status(200).json(result)
     } else {
       return res.status(400).json(result)
     }
   } catch (error) {
     console.error("deleteSplitExpense error:", error)
+    return res
+      .status(500)
+      .json({ success: false, message: "Internal server error" })
+  }
+}
+
+/**
+ * Get group-scoped expenses
+ */
+export const getGroupExpenses = async (req: Request, res: Response) => {
+  try {
+    const { groupId } = req.params
+    const result = await SplitExpenseService.getSplitExpenses(
+      req.userId,
+      groupId
+    )
+    return res.status(200).json(result)
+  } catch (error) {
+    console.error("getGroupExpenses error:", error)
     return res
       .status(500)
       .json({ success: false, message: "Internal server error" })

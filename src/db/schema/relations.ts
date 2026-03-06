@@ -8,10 +8,15 @@ import {
   friends,
   userPassphrases,
   userKeys,
+  groups,
+  groupMembers,
+  groupMessages,
+  groupBalances,
   splitExpenses,
   splitExpenseParticipants,
   settlements,
   userBalances,
+  activityLogs,
 } from "./index"
 
 export const expensesRelations = relations(expenses, ({ one }) => ({
@@ -73,6 +78,22 @@ export const usersRelations = relations(users, ({ many }) => ({
   }),
   balancesAsFriend: many(userBalances, {
     relationName: "userBalances_friend",
+  }),
+  // Group & Activity relations
+  createdGroups: many(groups, {
+    relationName: "groups_creator",
+  }),
+  groupMemberships: many(groupMembers, {
+    relationName: "groupMembers_user",
+  }),
+  groupMessagesSent: many(groupMessages, {
+    relationName: "groupMessages_sender",
+  }),
+  activityLogsPerformed: many(activityLogs, {
+    relationName: "activityLogs_user",
+  }),
+  activityLogsReceived: many(activityLogs, {
+    relationName: "activityLogs_target",
   }),
 }))
 
@@ -146,11 +167,19 @@ export const splitExpensesRelations = relations(
       references: [category.id],
       relationName: "splitExpenses_category",
     }),
+    group: one(groups, {
+      fields: [splitExpenses.groupId],
+      references: [groups.id],
+      relationName: "splitExpenses_group",
+    }),
     participants: many(splitExpenseParticipants, {
       relationName: "splitExpenseParticipants_expense",
     }),
     settlements: many(settlements, {
       relationName: "settlements_expense",
+    }),
+    activityLogs: many(activityLogs, {
+      relationName: "activityLogs_expense",
     }),
   })
 )
@@ -199,5 +228,103 @@ export const userBalancesRelations = relations(userBalances, ({ one }) => ({
     fields: [userBalances.friendId],
     references: [users.id],
     relationName: "userBalances_friend",
+  }),
+}))
+
+// ======================================
+// Group Relations
+// ======================================
+
+export const groupsRelations = relations(groups, ({ one, many }) => ({
+  creator: one(users, {
+    fields: [groups.createdByUser],
+    references: [users.id],
+    relationName: "groups_creator",
+  }),
+  members: many(groupMembers, {
+    relationName: "groupMembers_group",
+  }),
+  expenses: many(splitExpenses, {
+    relationName: "splitExpenses_group",
+  }),
+  messages: many(groupMessages, {
+    relationName: "groupMessages_group",
+  }),
+  balances: many(groupBalances, {
+    relationName: "groupBalances_group",
+  }),
+  activityLogs: many(activityLogs, {
+    relationName: "activityLogs_group",
+  }),
+}))
+
+export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
+  group: one(groups, {
+    fields: [groupMembers.groupId],
+    references: [groups.id],
+    relationName: "groupMembers_group",
+  }),
+  user: one(users, {
+    fields: [groupMembers.userId],
+    references: [users.id],
+    relationName: "groupMembers_user",
+  }),
+}))
+
+export const groupMessagesRelations = relations(groupMessages, ({ one }) => ({
+  group: one(groups, {
+    fields: [groupMessages.groupId],
+    references: [groups.id],
+    relationName: "groupMessages_group",
+  }),
+  sender: one(users, {
+    fields: [groupMessages.senderId],
+    references: [users.id],
+    relationName: "groupMessages_sender",
+  }),
+}))
+
+export const groupBalancesRelations = relations(groupBalances, ({ one }) => ({
+  group: one(groups, {
+    fields: [groupBalances.groupId],
+    references: [groups.id],
+    relationName: "groupBalances_group",
+  }),
+  user: one(users, {
+    fields: [groupBalances.userId],
+    references: [users.id],
+    relationName: "groupBalances_user",
+  }),
+  friend: one(users, {
+    fields: [groupBalances.friendId],
+    references: [users.id],
+    relationName: "groupBalances_friend",
+  }),
+}))
+
+// ======================================
+// Activity Log Relations
+// ======================================
+
+export const activityLogsRelations = relations(activityLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [activityLogs.userId],
+    references: [users.id],
+    relationName: "activityLogs_user",
+  }),
+  targetUser: one(users, {
+    fields: [activityLogs.targetUserId],
+    references: [users.id],
+    relationName: "activityLogs_target",
+  }),
+  group: one(groups, {
+    fields: [activityLogs.groupId],
+    references: [groups.id],
+    relationName: "activityLogs_group",
+  }),
+  splitExpense: one(splitExpenses, {
+    fields: [activityLogs.splitExpenseId],
+    references: [splitExpenses.id],
+    relationName: "activityLogs_expense",
   }),
 }))

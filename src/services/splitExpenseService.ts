@@ -16,6 +16,8 @@ interface CreateSplitExpenseParams {
   participants: { userId: string; amountOwed: number }[]
   expenseDate?: string
   paidBy: string
+  groupId?: string
+  splitType?: string
 }
 
 interface SettleUpParams {
@@ -38,6 +40,8 @@ class SplitExpenseService {
     participants,
     expenseDate,
     paidBy,
+    groupId,
+    splitType,
   }: CreateSplitExpenseParams) {
     try {
       // Insert split expense
@@ -48,6 +52,8 @@ class SplitExpenseService {
           description,
           totalAmount: String(totalAmount),
           category: category || null,
+          groupId: groupId || null,
+          splitType: splitType || "equal",
           expenseDate: expenseDate || new Date().toISOString(),
         })
         .returning()
@@ -95,8 +101,60 @@ class SplitExpenseService {
   /**
    * Get all split expenses for a user
    */
-  async getSplitExpenses(userId: string) {
+  async getSplitExpenses(userId: string, groupId?: string) {
     try {
+      // If filtering by group, return group-scoped expenses
+      if (groupId) {
+        const expenses = await db
+          .select({
+            id: splitExpenses.id,
+            createdBy: splitExpenses.createdBy,
+            description: splitExpenses.description,
+            totalAmount: splitExpenses.totalAmount,
+            category: splitExpenses.category,
+            groupId: splitExpenses.groupId,
+            splitType: splitExpenses.splitType,
+            expenseDate: splitExpenses.expenseDate,
+            status: splitExpenses.status,
+            createdAt: splitExpenses.createdAt,
+            updatedAt: splitExpenses.updatedAt,
+          })
+          .from(splitExpenses)
+          .where(eq(splitExpenses.groupId, groupId))
+          .orderBy(desc(splitExpenses.createdAt))
+
+        const expensesWithParticipants = await Promise.all(
+          expenses.map(async (expense) => {
+            const participants = await db
+              .select({
+                userId: splitExpenseParticipants.userId,
+                amountOwed: splitExpenseParticipants.amountOwed,
+                amountPaid: splitExpenseParticipants.amountPaid,
+                isPayer: splitExpenseParticipants.isPayer,
+                status: splitExpenseParticipants.status,
+                userName: sql<string>`${users.firstName} || ' ' || ${users.lastName}`,
+              })
+              .from(splitExpenseParticipants)
+              .innerJoin(users, eq(users.id, splitExpenseParticipants.userId))
+              .where(eq(splitExpenseParticipants.splitExpenseId, expense.id))
+
+            const [creator] = await db
+              .select({
+                name: sql<string>`${users.firstName} || ' ' || ${users.lastName}`,
+              })
+              .from(users)
+              .where(eq(users.id, expense.createdBy))
+
+            return {
+              ...expense,
+              participants,
+              creatorName: creator?.name || "",
+            }
+          })
+        )
+
+        return { success: true, data: expensesWithParticipants }
+      }
       // Get all split expense IDs where user is creator or participant
       const participantExpenses = await db
         .select({ splitExpenseId: splitExpenseParticipants.splitExpenseId })

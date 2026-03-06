@@ -11,6 +11,7 @@ import {
   deleteSplitExpense,
   createSplitExpenseValidation,
   settleUpValidation,
+  getGroupExpenses,
 } from "../controllers/splitExpenseController"
 
 const splitExpenseRouter = express.Router()
@@ -27,6 +28,9 @@ splitExpenseRouter.post(
 splitExpenseRouter.get("/list", getSplitExpenses)
 splitExpenseRouter.get("/details/:id", getSplitExpenseDetails)
 splitExpenseRouter.delete("/:id", deleteSplitExpense)
+
+// Group-scoped expenses
+splitExpenseRouter.get("/group/:groupId/expenses", getGroupExpenses)
 
 // Balances
 splitExpenseRouter.get("/balances", getUserBalances)
