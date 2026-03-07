@@ -163,7 +163,27 @@ class GroupChatService {
         })
         .returning()
 
-      return { success: true, data: newMessage }
+      // Fetch sender info for socket broadcasting
+      const [sender] = await db
+        .select({
+          firstName: users.firstName,
+          lastName: users.lastName,
+          profilePicture: users.profilePicture,
+        })
+        .from(users)
+        .where(eq(users.id, senderId))
+        .limit(1)
+
+      return {
+        success: true,
+        data: {
+          ...newMessage,
+          senderName: sender
+            ? `${sender.firstName} ${sender.lastName}`
+            : "Unknown",
+          senderProfilePicture: sender?.profilePicture || null,
+        },
+      }
     } catch (error) {
       console.error("GroupChatService.addSystemMessage error:", error)
       return {

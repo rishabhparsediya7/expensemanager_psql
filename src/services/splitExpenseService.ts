@@ -49,6 +49,7 @@ class SplitExpenseService {
         .insert(splitExpenses)
         .values({
           createdBy,
+          paidBy,
           description,
           totalAmount: String(totalAmount),
           category: category || null,
@@ -109,6 +110,7 @@ class SplitExpenseService {
           .select({
             id: splitExpenses.id,
             createdBy: splitExpenses.createdBy,
+            paidBy: splitExpenses.paidBy,
             description: splitExpenses.description,
             totalAmount: splitExpenses.totalAmount,
             category: splitExpenses.category,
@@ -170,9 +172,11 @@ class SplitExpenseService {
         .select({
           id: splitExpenses.id,
           createdBy: splitExpenses.createdBy,
+          paidBy: splitExpenses.paidBy,
           description: splitExpenses.description,
           totalAmount: splitExpenses.totalAmount,
           category: splitExpenses.category,
+          groupId: splitExpenses.groupId,
           splitType: splitExpenses.splitType,
           expenseDate: splitExpenses.expenseDate,
           status: splitExpenses.status,

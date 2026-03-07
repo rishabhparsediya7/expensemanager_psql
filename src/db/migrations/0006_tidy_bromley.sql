@@ -1,0 +1,2 @@
+ALTER TABLE "splitExpenses" ADD COLUMN "paid_by" uuid NOT NULL;--> statement-breakpoint
+ALTER TABLE "splitExpenses" ADD CONSTRAINT "splitExpenses_paid_by_fkey" FOREIGN KEY ("paid_by") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;

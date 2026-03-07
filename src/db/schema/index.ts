@@ -276,6 +276,7 @@ export const splitExpenses = pgTable(
   {
     id: uuid().defaultRandom().primaryKey().notNull(),
     createdBy: uuid("created_by").notNull(),
+    paidBy: uuid("paid_by").notNull(),
     description: text().notNull(),
     totalAmount: numeric("total_amount", { precision: 12, scale: 2 }).notNull(),
     category: integer(),
@@ -300,6 +301,11 @@ export const splitExpenses = pgTable(
       columns: [table.createdBy],
       foreignColumns: [users.id],
       name: "splitExpenses_created_by_fkey",
+    }).onDelete("cascade"),
+    foreignKey({
+      columns: [table.paidBy],
+      foreignColumns: [users.id],
+      name: "splitExpenses_paid_by_fkey",
     }).onDelete("cascade"),
     foreignKey({
       columns: [table.category],

@@ -4,6 +4,7 @@ import SplitExpenseService from "../services/splitExpenseService"
 import ActivityService from "../services/activityService"
 import GroupChatService from "../services/groupChatService"
 import { sendPushNotification } from "../firebaseAdmin"
+import { getIO } from "../socket"
 
 // Validation middleware
 export const createSplitExpenseValidation = [
@@ -108,13 +109,29 @@ export const createSplitExpense = async (req: Request, res: Response) => {
 
       // If group expense, add a system message in group chat
       if (groupId) {
-        await GroupChatService.addSystemMessage(
+        const chatResult = await GroupChatService.addSystemMessage(
           groupId,
-          createdBy,
+          paidBy, // Use the payer as the sender for better chat alignment
           "expense_added",
           `💰 Added expense: ${description} — ₹${totalAmount}`,
-          { splitExpenseId: expenseId, amount: totalAmount, description }
+          {
+            splitExpenseId: expenseId,
+            amount: totalAmount,
+            description,
+            paidBy,
+          }
         )
+
+        if (chatResult.success) {
+          // Emit socket message for real-time update
+          try {
+            getIO()
+              .to(`group:${groupId}`)
+              .emit("receive-group-message", chatResult.data)
+          } catch (err) {
+            console.error("Socket emit failed (create):", err)
+          }
+        }
       }
 
       return res.status(201).json(result)
@@ -318,7 +335,7 @@ export const deleteSplitExpense = async (req: Request, res: Response) => {
 
       // If group expense, add system message
       if (expense.groupId) {
-        await GroupChatService.addSystemMessage(
+        const chatResult = await GroupChatService.addSystemMessage(
           expense.groupId,
           userId,
           "expense_deleted",
@@ -329,6 +346,17 @@ export const deleteSplitExpense = async (req: Request, res: Response) => {
             amount: expense.totalAmount,
           }
         )
+
+        if (chatResult.success) {
+          // Emit socket message for real-time update
+          try {
+            getIO()
+              .to(`group:${expense.groupId}`)
+              .emit("receive-group-message", chatResult.data)
+          } catch (err) {
+            console.error("Socket emit failed (delete):", err)
+          }
+        }
       }
 
       return res.status(200).json(result)
