@@ -46,10 +46,10 @@ class ExpenseService {
         .values({
           userId,
           amount: String(amount),
-          categoryId,
+          categoryId: categoryId || null,
           description,
           expenseDate: expenseDate || new Date().toISOString(),
-          paymentMethodId,
+          paymentMethodId: paymentMethodId || null,
         })
         .returning()
 
